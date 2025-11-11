@@ -1,2 +1,2 @@
 # KonSerial
-Serial Debug Tool with pythonQT5
+Serial Debug Tool with rust, using tauri & vue3
