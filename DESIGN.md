@@ -4,6 +4,14 @@
 
 KonSerial 是一款基于 Tauri + Vue3 和 Rust + TypeScript 构建的现代化、轻量化的串口调试工具。该项目结合了 VOFA+ 和串口调试助手的功能，提供了一个集数据收发、波形显示、多协议支持及自动化脚本于一体的综合调试平台。
 
+### 架构设计理念
+
+本项目遵循以下架构设计理念：
+- **安全优先**: 所有系统级操作（串口、网络、文件系统）由后端安全处理
+- **前后端分离**: 明确划分前后端职责，后端处理逻辑，前端处理展示
+- **性能优化**: 计算密集型任务在后端执行，避免阻塞UI线程
+- **可维护性**: 业务逻辑集中在后端，便于统一管理与测试
+
 ## 技术架构
 
 ### 前端技术栈
@@ -185,15 +193,15 @@ module.exports = {
   .btn-primary {
     @apply px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors;
   }
-  
+
   .btn-secondary {
     @apply px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors;
   }
-  
+
   .card {
     @apply bg-white rounded-lg shadow-md p-6;
   }
-  
+
   .input-field {
     @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500;
   }
@@ -210,7 +218,7 @@ module.exports = {
 <template>
   <div class="card max-w-2xl mx-auto">
     <h2 class="text-2xl font-bold text-gray-800 mb-6">串口配置</h2>
-    
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">串口号</label>
@@ -220,7 +228,7 @@ module.exports = {
           </option>
         </select>
       </div>
-      
+
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">波特率</label>
         <select class="input-field">
@@ -231,7 +239,7 @@ module.exports = {
           <option value="115200">115200</option>
         </select>
       </div>
-      
+
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">数据位</label>
         <select class="input-field">
@@ -241,7 +249,7 @@ module.exports = {
           <option value="5">5</option>
         </select>
       </div>
-      
+
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">停止位</label>
         <select class="input-field">
@@ -250,7 +258,7 @@ module.exports = {
         </select>
       </div>
     </div>
-    
+
     <div class="mt-6 flex space-x-4 justify-end">
       <button class="btn-secondary px-6 py-2">
         重置
@@ -332,7 +340,7 @@ pub async fn start_serial_reading(
             sleep(Duration::from_millis(1)).await;
         }
     });
-    
+
     Ok(())
 }
 ```
@@ -349,36 +357,36 @@ pub struct ScriptEngine {
 impl ScriptEngine {
     pub fn new() -> Self {
         let mut engine = Engine::new();
-        
+
         // 注册串口操作函数到脚本引擎
         engine.register_fn("send_serial", |data: String, port_name: String| {
             // 实现串口发送功能
             println!("通过串口 {} 发送数据: {}", port_name, data);
             true
         });
-        
+
         engine.register_fn("send_hex", |hex_str: String, port_name: String| {
             // 实现十六进制数据发送功能
             println!("通过串口 {} 发送十六进制数据: {}", port_name, hex_str);
             true
         });
-        
+
         engine.register_fn("delay", |ms: i64| {
             // 在脚本中实现延时功能
             std::thread::sleep(Duration::from_millis(ms as u64));
         });
-        
+
         engine.register_fn("log", |msg: String| {
             // 在脚本中记录日志
             println!("脚本日志: {}", msg);
         });
-        
+
         Self {
             engine,
             scope: Scope::new(),
         }
     }
-    
+
     pub fn execute_script(&mut self, script: &str) -> Result<rhai::Dynamic, Box<dyn std::error::Error>> {
         let ast = self.engine.compile(script)?;
         let result = self.engine.run_ast_with_scope(&mut self.scope, &ast)?;
@@ -421,7 +429,7 @@ impl SerialPortManager {
     pub fn open_port(&mut self, config: SerialConfig) -> Result<(), Box<dyn std::error::Error>> {
         // 配置串口参数
         let mut settings = serialport::new(&config.port_name, config.baud_rate);
-        
+
         settings = settings
             .data_bits(match config.data_bits {
                 5 => DataBits::Five,
@@ -445,15 +453,15 @@ impl SerialPortManager {
         // 打开串口
         let port = settings.open()?;
         self.port = Some(port);
-        
+
         Ok(())
     }
-    
+
     pub fn close_port(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.port = None;
         Ok(())
     }
-    
+
     pub fn write_data(&mut self, data: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ref mut port) = self.port {
             port.write_all(&data)?;
@@ -462,7 +470,7 @@ impl SerialPortManager {
             Err("串口未打开".into())
         }
     }
-    
+
     // 启动异步读取数据
     pub fn start_reading(&mut self, emit_fn: impl Fn(String, Vec<u8>) + Send + 'static) {
         if let Some(port) = self.port.as_mut() {
@@ -491,7 +499,7 @@ pub async fn open_serial_port(
     // 实现串口打开逻辑
     use std::sync::Mutex;
     use std::collections::HashMap;
-    
+
     // 在实际实现中，这里会维护一个串口管理器实例
     // 我们用一个简化的示例说明概念
     let mut manager = SerialPortManager::new();
@@ -502,12 +510,12 @@ pub async fn open_serial_port(
                 loop {
                     // 简化示例：实际中这里会异步读取串口数据
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    
+
                     // 当收到数据时，发送事件到前端
                     // window.emit("serial_data_received", &received_data).unwrap();
                 }
             });
-            
+
             Ok("串口打开成功".to_string())
         }
         Err(e) => Err(format!("串口打开失败: {}", e)),
@@ -548,7 +556,7 @@ pub async fn close_serial_port() -> Result<String, String> {
 pub async fn execute_script(script_content: String) -> Result<String, String> {
     // 执行用户自定义脚本
     let mut script_engine = ScriptEngine::new();
-    
+
     match script_engine.execute_script(&script_content) {
         Ok(_) => Ok("脚本执行成功".to_string()),
         Err(e) => Err(format!("脚本执行错误: {}", e)),
@@ -693,7 +701,7 @@ const updateData = (newData: { channel: number, value: number, timestamp: number
         x: item.timestamp,
         y: item.value
       })
-      
+
       // 限制数据点数量以保持性能
       if (series.value[channelIndex].data.length > 1000) {
         series.value[channelIndex].data.shift()
@@ -751,8 +759,8 @@ const updateData = (newData: { channel: number, value: number, timestamp: number
         <option value="data-process">数据处理</option>
       </select>
     </div>
-    <textarea 
-      v-model="scriptContent" 
+    <textarea
+      v-model="scriptContent"
       class="script-editor"
       placeholder="在此编写脚本..."
     ></textarea>
@@ -828,18 +836,18 @@ pub struct ScriptEngine {
 impl ScriptEngine {
     pub fn new() -> Self {
         let mut engine = Engine::new();
-        
+
         // 注册串口操作函数
         engine.register_fn("send_serial", |data: String| {
             // 发送串口数据
         });
-        
+
         Self {
             engine,
             scope: Scope::new(),
         }
     }
-    
+
     pub fn execute_script(&mut self, script: &str) -> Result<rhai::Dynamic, Box<dyn std::error::Error>> {
         self.engine.eval_with_scope::<rhai::Dynamic>(&mut self.scope, script)
     }
@@ -883,14 +891,14 @@ const exportData = async () => {
       extensions: [exportFormat.value]
     }]
   })
-  
+
   if (filePath) {
     // 请求后端格式化数据
-    const formattedData = await invoke('format_serial_data', { 
+    const formattedData = await invoke('format_serial_data', {
       format: exportFormat.value,
-      filePath 
+      filePath
     })
-    
+
     // 使用tauri-plugin-fs写入文件
     await writeTextFile(filePath, formattedData)
   }
@@ -932,7 +940,7 @@ pub async fn format_serial_data(
     end_time: Option<u64>,
 ) -> Result<String, String> {
     let data = state.lock().unwrap();
-    
+
     // 根据时间范围过滤数据
     let filtered_data: Vec<&SerialDataPoint> = data.serial_data
         .iter()
@@ -962,7 +970,7 @@ pub async fn format_serial_data(
         "txt" => {
             let mut output = String::new();
             for point in filtered_data {
-                output.push_str(&format!("时间: {}, 通道: {}, 值: {}\n", 
+                output.push_str(&format!("时间: {}, 通道: {}, 值: {}\n",
                     point.timestamp, point.channel, point.value));
             }
             Ok(output)
@@ -1056,35 +1064,67 @@ pub async fn format_serial_data(
 - 网络数据接收: 异步处理，防止阻塞UI
 - 文件操作: 在后端异步执行，通过事件通知前端
 
+## 前后端分工策略
+
+在KonSerial项目中，我们采用后端为主、前端为辅的分工策略，具体责任划分如下：
+
+### 后端责任
+- **串口通信逻辑**: 串口打开、配置、读写、关闭
+- **网络通信逻辑**: TCP/UDP连接管理、数据传输
+- **协议解析**: 各种通信协议的数据解析
+- **数据处理**: 接收数据的格式化、过滤、转换
+- **数据存储**: 数据记录、文件导出、配置管理
+- **脚本执行**: Rhai脚本引擎、安全沙箱
+- **安全验证**: 文件系统访问控制、命令合法性验证
+- **业务逻辑**: 通信状态管理、错误处理、性能优化
+
+### 前端责任
+- **UI展示**: 用户界面渲染和交互
+- **用户输入**: 表单验证（基本格式）、用户操作捕获
+- **状态管理**: UI状态、用户会话状态
+- **事件处理**: 用户交互响应、数据展示
+- **数据可视化**: 波形图、图表渲染（使用ApexCharts）
+- **用户体验**: 加载状态、错误提示、交互反馈
+
+### 分工原则
+1. **数据安全**: 所有与文件系统、网络、硬件的交互都在后端进行
+2. **性能考虑**: 数据密集型处理在后端，避免阻塞前端
+3. **安全性**: 敏感操作和逻辑验证在后端实现
+4. **可维护性**: 业务逻辑集中在后端，便于统一管理
+
 ## 数据流设计
 
 ### 串口数据流
 ```
 1. 用户操作串口参数配置
-   -> 前端发送命令到后端
-   -> 后端配置串口参数
-   -> 返回配置结果
+   -> 前端验证参数格式（基本验证）
+   -> 前端发送配置命令到后端
+   -> 后端进行深度验证并配置串口
+   -> 后端返回配置结果
 
 2. 串口数据发送
    -> 用户在前端输入数据
+   -> 前端格式化数据（十六进制/ASCII转换）
    -> 前端发送写入命令到后端
    -> 后端写入串口
-   -> 返回写入结果
+   -> 后端返回写入结果
 
 3. 串口数据接收
    -> 后端异步监听串口数据
-   -> 收到数据后发送Tauri事件
-   -> 前端监听事件并更新UI
-   -> 可视化模块处理数据并更新波形
+   -> 后端进行数据解析和格式化format!("Error finding serial ports: {}", e)
+   -> 后端发送Tauri事件到前端
+   -> 前端接收事件并更新UI
+   -> 接收数据的可视化在前端处理（通过ApexCharts）
 ```
 
 ### 网络数据流
 ```
 1. TCP/UDP连接建立
    -> 用户输入连接参数
+   -> 前端验证参数格式
    -> 前端发送连接命令到后端
    -> 后端建立网络连接
-   -> 返回连接状态
+   -> 后端返回连接状态
 
 2. 网络数据收发
    -> 类似串口数据流，通过Tauri命令和事件处理
@@ -1094,18 +1134,20 @@ pub async fn format_serial_data(
 ```
 1. 脚本执行
    -> 用户在前端编辑脚本
-   -> 前端发送执行命令到后端
-   -> 后端启动脚本引擎
-   -> 脚本执行结果通过事件返回前端
+   -> 前端提供语法高亮和基本验证
+   -> 前端发送执行命令和脚本内容到后端
+   -> 后端在安全沙箱中执行脚本
+   -> 执行结果和输出通过事件返回前端
 ```
 
 ### 文件处理数据流
 ```
 1. 数据导出
    -> 用户选择导出格式和范围
-   -> 前端发送导出命令到后端
-   -> 后端处理数据并写入文件
-   -> 返回导出结果
+   -> 前端发送导出请求到后端
+   -> 后端通过tauri-plugin-dialog获取保存路径
+   -> 后端处理数据格式化并导出
+   -> 后端返回操作结果
 ```
 
 ## 性能优化策略
@@ -1125,6 +1167,13 @@ pub async fn format_serial_data(
 - 合理使用线程池
 - 实现数据缓冲区减少系统调用
 - 使用零拷贝技术优化大数据传输
+- 将计算密集型任务集中在后端执行，避免影响前端响应性
+
+### 前后端通信优化
+- 使用Tauri命令进行同步操作
+- 使用Tauri事件进行异步数据推送
+- 实现数据批量传输减少通信开销
+- 对大数据流进行分块处理
 
 ### 内存管理
 - 实现数据生命周期管理
