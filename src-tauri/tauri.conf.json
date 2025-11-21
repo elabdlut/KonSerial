@@ -21,6 +21,17 @@
       "csp": null
     }
   },
+  "plugins": {
+    "cli": {
+      "args": [
+        {
+          "name": "config",
+          "short": "c",
+          "takesValue": true
+        }
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
