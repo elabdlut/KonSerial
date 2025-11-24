@@ -11,11 +11,11 @@ pub struct SerialConfig {
     pub baud_rate: u32,
     pub data_bits: u8,
     pub stop_bits: u8,
-    pub parity: string,
+    pub parity: String,
 }
 
 // 界面配置
-#[derive(Serailize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UiConfig {
     pub theme: String,
     pub language: String,
@@ -32,6 +32,7 @@ pub struct DataConfig {
     pub data_format: String,
 }
 
+// 上层结构体
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AppConfig {
     pub serial: SerialConfig,
