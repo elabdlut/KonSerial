@@ -18,8 +18,6 @@ pub fn run() {
     #[cfg(not(debug_assertions))]
     let level = LevelFilter::Info;
     
-    Logger::new(level);
-    
     log::info!("KonSerial 应用启动...");
     log::debug!("调试模式已启用");
     log::warn!("这是一条警告消息");
