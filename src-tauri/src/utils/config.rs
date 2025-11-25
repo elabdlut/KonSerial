@@ -1,9 +1,9 @@
-// 记录一些配置信息，便于用户退出时保存信息，例如界面主题设置、串口相关设置
+/// 记录一些配置信息，便于用户退出时保存信息，例如界面主题设置、串口相关设置
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-// 串口配置
+/// 串口配置
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SerialConfig {
     pub port: String,
@@ -11,18 +11,21 @@ pub struct SerialConfig {
     pub data_bits: u8,
     pub stop_bits: u8,
     pub parity: String,
+    pub flow_control: String,
 }
 
-// 界面配置
+/// 界面配置
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UiConfig {
     pub theme: String,
     pub language: String,
+    pub font_size: u8,
+    pub sidebar_width: u32,
     pub window_width: u32,
     pub window_height: u32,
 }
 
-// 数据处理配置
+/// 数据处理配置
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DataConfig {
     pub auto_save: bool,
@@ -31,7 +34,7 @@ pub struct DataConfig {
     pub data_format: String,
 }
 
-// 上层结构体
+/// 上层结构体
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AppConfig {
     pub serial: SerialConfig,
@@ -51,10 +54,13 @@ impl AppConfig {
                 data_bits: 8,
                 stop_bits: 1,
                 parity: String::from("None"),
+                flow_control: String::from("None"),
             },
             ui: UiConfig {
                 theme: String::from("light"),
                 language: String::from("zh-CN"),
+                font_size: 12,
+                sidebar_width: 200,
                 window_width: 1024,
                 window_height: 768,
             },
