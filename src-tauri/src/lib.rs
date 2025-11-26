@@ -1,8 +1,17 @@
 // 声明 utils 模块
 #[macro_use]
 mod utils;
+mod data_logger;
+mod network;
+mod script;
+mod serial;
+mod visualization;
+
 use crate::utils::config::AppConfig;
 use crate::utils::logger::{Logger, LoggerConfig};
+use crate::serial::port_manager::PortManager;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -15,13 +24,16 @@ fn greet(name: &str) -> String {
 pub fn run() {
     // 初始化日志
     Logger::init(LoggerConfig::default());
-    
+
     log_info!("应用启动中...");
-    
+
+    // 初始化配置
     let config_path = "/home/sratle/.config/konserial/config.json";
-    let config = AppConfig::init(config_path);
+    let _config = AppConfig::init(config_path);
     
-    log_info!(&format!("当前串口波特率: {}", config.serial.baud_rate));
+    // 初始化串口管理器
+    let port_manager = Arc::new(Mutex::new(PortManager::new()));
+
     log_warn!("应用启动成功");
 
     tauri::Builder::default()
@@ -30,7 +42,24 @@ pub fn run() {
         .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        // 注册串口管理器为全局状态
+        .manage(port_manager)
+        .invoke_handler(tauri::generate_handler![
+            // 基础命令
+            greet,
+            // 配置管理命令
+            crate::utils::commands::load_config,
+            crate::utils::commands::save_config,
+            crate::utils::commands::get_config_path,
+            // 串口管理命令
+            crate::serial::commands::list_serial_ports,
+            crate::serial::commands::get_serial_ports_info,
+            crate::serial::commands::open_serial_port,
+            crate::serial::commands::close_serial_port,
+            crate::serial::commands::get_serial_status,
+            crate::serial::commands::send_serial_data,
+            crate::serial::commands::is_serial_connected,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
