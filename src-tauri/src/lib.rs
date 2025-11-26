@@ -1,8 +1,8 @@
 // 声明 utils 模块
+#[macro_use]
 mod utils;
-
-use utils::logger::{Logger};
-use log::LevelFilter;
+use crate::utils::config::AppConfig;
+use crate::utils::logger::{Logger, LoggerConfig};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -13,15 +13,17 @@ fn greet(name: &str) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(debug_assertions)]
-    let level = LevelFilter::Debug;
-    #[cfg(not(debug_assertions))]
-    let level = LevelFilter::Info;
+    // 初始化日志
+    Logger::init(LoggerConfig::default());
     
-    log::info!("KonSerial 应用启动...");
-    log::debug!("调试模式已启用");
-    log::warn!("这是一条警告消息");
+    log_info!("应用启动中...");
     
+    let config_path = "/home/sratle/.config/konserial/config.json";
+    let config = AppConfig::init(config_path);
+    
+    log_info!(&format!("当前串口波特率: {}", config.serial.baud_rate));
+    log_warn!("应用启动成功");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())

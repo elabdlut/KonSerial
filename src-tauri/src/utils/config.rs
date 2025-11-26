@@ -1,3 +1,4 @@
+use crate::{log_error, log_info, log_warn};
 /// 记录一些配置信息，便于用户退出时保存信息，例如界面主题设置、串口相关设置
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -45,6 +46,36 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
+    /// 初始化配置，若存在就加载，不存在就创建并保存
+    pub fn init<P: AsRef<Path>>(path: P) -> Self {
+        let path = path.as_ref();
+
+        if path.exists() {
+            match Self::load(path) {
+                Ok(cfg) => {
+                    log_info!("配置文件加载成功");
+                    cfg
+                }
+                Err(e) => {
+                    log_error!(&format!("加载失败:{}, 创建新配置",e));
+
+                    let cfg = Self::new(path);
+                    if let Err(e) = cfg.save() {
+                        log_error!(&format!("新配置创建失败@{}", e));
+                    }
+                    cfg
+                }
+            }
+        } else {
+            log_warn!("配置不存在，尝试创建新配置");
+            let cfg = Self::new(path);
+            if let Err(e) = cfg.save() {
+                log_error!(&format!("新配置创建失败@{}", e));
+            }
+            cfg
+        }
+    }
+
     /// 创建新配置，指定配置文件路径
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
         AppConfig {
@@ -73,18 +104,20 @@ impl AppConfig {
             config_path: Some(path.as_ref().to_path_buf()),
         }
     }
-    
+
     /// 保存配置到存储的路径
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(path) = &self.config_path {
             let config_str = serde_json::to_string_pretty(self)?;
             fs::write(path, config_str)?;
+            log_info!("配置文件已保存");
             Ok(())
         } else {
+            log_error!("配置文件路径未设置");
             Err("配置文件路径未设置".into())
         }
     }
-    
+
     /// 从存储的路径加载配置
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
         let config_str = fs::read_to_string(&path)?;
@@ -93,23 +126,24 @@ impl AppConfig {
         config.config_path = Some(path.as_ref().to_path_buf());
         Ok(config)
     }
-    
+
     /// 重新加载配置（从已存储的路径）
     pub fn reload(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(path) = &self.config_path {
             let config_str = fs::read_to_string(path)?;
             let loaded: AppConfig = serde_json::from_str(&config_str)?;
-            
+
             // 更新配置，保留路径
             self.serial = loaded.serial;
             self.ui = loaded.ui;
             self.data = loaded.data;
             Ok(())
         } else {
+            log_error!("配置文件路径未设置");
             Err("配置文件路径未设置".into())
         }
     }
-    
+
     /// 获取配置文件路径
     pub fn get_path(&self) -> Option<&PathBuf> {
         self.config_path.as_ref()
