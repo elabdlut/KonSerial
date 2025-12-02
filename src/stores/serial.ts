@@ -1,85 +1,201 @@
-// 串口状态管理
-import { ref } from 'vue'
+// 串口状态管理（多连接架构）
+import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { appConfig } from './config'
 
-// 串口运行时状态接口
-interface PortRuntimeInfo {
-  status: 'Disconnected' | 'Connecting' | 'Connected' | { Error: string }
-  connected_port: string | null
-  current_baud_rate: number | null
+// ========== 类型定义 ==========
+
+/** 串口完整配置 */
+export interface SerialPortConfig {
+  port_name: string
+  baud_rate: number
+  data_bits: number
+  stop_bits: number
+  parity: string
+  flow_control: string
+  timeout_ms: number
+}
+
+/** 串口状态枚举 */
+export type PortStatus = 
+  | 'Disconnected' 
+  | 'Connecting' 
+  | 'Connected' 
+  | { Error: string }
+
+/** 单个连接的运行时信息 */
+export interface ConnectionInfo {
+  connection_id: string
+  status: PortStatus
+  config: SerialPortConfig
   bytes_received: number
   bytes_sent: number
   last_error: string | null
+  created_at: string
 }
 
-interface SerialPortInfo {
+/** 全局运行时信息 */
+export interface GlobalRuntimeInfo {
+  available_ports: string[]
+  active_connections: ConnectionInfo[]
+  total_connections: number
+}
+
+/** 串口简单信息 */
+export interface SerialPortInfo {
   port_name: string
   port_type: string
 }
 
-// 运行时状态（从后端获取）
-export const serialStatus = ref<PortRuntimeInfo | null>(null)
+// ========== 响应式状态 ==========
 
-// 可用串口列表
-export const availablePorts = ref<string[]>([])
+/** 全局运行时信息 */
+export const globalInfo = ref<GlobalRuntimeInfo | null>(null)
 
-// 刷新串口列表
-export async function refreshPorts() {
-  try {
-    availablePorts.value = await invoke<string[]>('list_serial_ports')
-    console.log('串口列表已刷新:', availablePorts.value)
-  } catch (error) {
-    console.error('刷新串口列表失败:', error)
-  }
+/** 可用串口列表 */
+export const availablePorts = computed(() => globalInfo.value?.available_ports || [])
+
+/** 所有活跃连接 */
+export const activeConnections = computed(() => globalInfo.value?.active_connections || [])
+
+/** 当前选中的连接 ID（用于标签页切换） */
+export const currentConnectionId = ref<string | null>(null)
+
+/** 当前选中的连接信息 */
+export const currentConnection = computed(() => {
+  if (!currentConnectionId.value) return null
+  return activeConnections.value.find(c => c.connection_id === currentConnectionId.value) || null
+})
+
+// ========== 工具函数 ==========
+
+/** 生成唯一的连接 ID */
+export function generateConnectionId(): string {
+  return `conn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
 
-// 打开串口（使用前端配置）
-export async function openSerialPort() {
+/** 从 AppConfig 创建 SerialPortConfig */
+export function createConfigFromApp(portName?: string): SerialPortConfig {
   if (!appConfig.value) {
-    console.error('配置未加载')
-    return
+    throw new Error('配置未加载')
   }
   
+  return {
+    port_name: portName || appConfig.value.serial.port,
+    baud_rate: appConfig.value.serial.baud_rate,
+    data_bits: appConfig.value.serial.data_bits,
+    stop_bits: appConfig.value.serial.stop_bits,
+    parity: appConfig.value.serial.parity,
+    flow_control: appConfig.value.serial.flow_control,
+    timeout_ms: appConfig.value.serial.timeout_ms || 100,
+  }
+}
+
+// ========== 串口操作 ==========
+
+/** 刷新可用串口列表 */
+export async function refreshPorts() {
+  try {
+    const ports = await invoke<string[]>('refresh_serial_ports')
+    console.log('串口列表已刷新:', ports)
+    await updateGlobalInfo()
+  } catch (error) {
+    console.error('刷新串口列表失败:', error)
+    throw error
+  }
+}
+
+/** 打开新的串口连接 */
+export async function openSerialPort(
+  connectionId: string,
+  config: SerialPortConfig
+): Promise<void> {
   try {
     await invoke('open_serial_port', {
-      portName: appConfig.value.serial.port,
-      baudRate: appConfig.value.serial.baud_rate,
+      connectionId,
+      config,
     })
     
-    console.log('串口已打开')
+    console.log(`串口连接 [${connectionId}] 已打开:`, config.port_name)
     
-    // 获取最新状态
-    await updateSerialStatus()
+    // 更新全局信息
+    await updateGlobalInfo()
+    
+    // 设置为当前连接
+    currentConnectionId.value = connectionId
   } catch (error) {
     console.error('打开串口失败:', error)
+    throw error
   }
 }
 
-// 关闭串口
-export async function closeSerialPort() {
+/** 使用默认配置打开串口（从 AppConfig） */
+export async function openDefaultSerialPort(): Promise<string> {
+  const connectionId = generateConnectionId()
+  const config = createConfigFromApp()
+  
+  await openSerialPort(connectionId, config)
+  return connectionId
+}
+
+/** 关闭指定串口连接 */
+export async function closeSerialPort(connectionId: string): Promise<void> {
   try {
-    await invoke('close_serial_port')
-    console.log('串口已关闭')
+    await invoke('close_serial_port', { connectionId })
+    console.log(`串口连接 [${connectionId}] 已关闭`)
     
-    // 更新状态
-    await updateSerialStatus()
+    // 如果是当前连接，切换到其他连接
+    if (currentConnectionId.value === connectionId) {
+      const remaining = activeConnections.value.filter(c => c.connection_id !== connectionId)
+      currentConnectionId.value = remaining.length > 0 ? remaining[0].connection_id : null
+    }
+    
+    await updateGlobalInfo()
   } catch (error) {
     console.error('关闭串口失败:', error)
+    throw error
   }
 }
 
-// 更新串口状态
-export async function updateSerialStatus() {
+/** 关闭所有串口连接 */
+export async function closeAllSerialPorts(): Promise<void> {
   try {
-    serialStatus.value = await invoke<PortRuntimeInfo>('get_serial_status')
+    await invoke('close_all_serial_ports')
+    console.log('所有串口已关闭')
+    
+    currentConnectionId.value = null
+    await updateGlobalInfo()
   } catch (error) {
-    console.error('获取串口状态失败:', error)
+    console.error('关闭所有串口失败:', error)
+    throw error
   }
 }
 
-// 发送数据
-export async function sendData(data: string, isHex: boolean = false) {
+/** 获取指定连接的信息 */
+export async function getConnectionInfo(connectionId: string): Promise<ConnectionInfo> {
+  try {
+    return await invoke<ConnectionInfo>('get_connection_info', { connectionId })
+  } catch (error) {
+    console.error('获取连接信息失败:', error)
+    throw error
+  }
+}
+
+/** 更新全局运行时信息 */
+export async function updateGlobalInfo(): Promise<void> {
+  try {
+    globalInfo.value = await invoke<GlobalRuntimeInfo>('get_global_runtime_info')
+  } catch (error) {
+    console.error('获取全局信息失败:', error)
+  }
+}
+
+/** 发送数据到指定连接 */
+export async function sendData(
+  connectionId: string,
+  data: string,
+  isHex: boolean = false
+): Promise<number> {
   try {
     let bytes: number[]
     
@@ -91,28 +207,61 @@ export async function sendData(data: string, isHex: boolean = false) {
       bytes = Array.from(new TextEncoder().encode(data))
     }
     
-    const sentBytes = await invoke<number>('send_serial_data', { data: bytes })
-    console.log(`已发送 ${sentBytes} 字节`)
+    const sentBytes = await invoke<number>('send_serial_data', {
+      connectionId,
+      data: bytes,
+    })
+    
+    console.log(`[${connectionId}] 已发送 ${sentBytes} 字节`)
     
     // 更新状态
-    await updateSerialStatus()
+    await updateGlobalInfo()
+    
+    return sentBytes
   } catch (error) {
     console.error('发送数据失败:', error)
+    throw error
   }
 }
 
-// 定时更新状态（可选）
-let statusInterval: number | null = null
-
-export function startStatusPolling(interval: number = 1000) {
-  if (statusInterval !== null) return
-  
-  statusInterval = window.setInterval(updateSerialStatus, interval)
+/** 发送数据到当前连接 */
+export async function sendDataToCurrent(
+  data: string,
+  isHex: boolean = false
+): Promise<number> {
+  if (!currentConnectionId.value) {
+    throw new Error('没有活跃的串口连接')
+  }
+  return sendData(currentConnectionId.value, data, isHex)
 }
 
+/** 检查指定连接是否已连接 */
+export async function isConnected(connectionId: string): Promise<boolean> {
+  try {
+    return await invoke<boolean>('is_serial_connected', { connectionId })
+  } catch (error) {
+    console.error('检查连接状态失败:', error)
+    return false
+  }
+}
+
+// ========== 自动更新 ==========
+
+let pollingInterval: number | null = null
+
+/** 开始定时更新状态 */
+export function startStatusPolling(interval: number = 1000) {
+  if (pollingInterval !== null) return
+  
+  pollingInterval = window.setInterval(updateGlobalInfo, interval)
+  console.log('状态轮询已启动')
+}
+
+/** 停止定时更新 */
 export function stopStatusPolling() {
-  if (statusInterval !== null) {
-    clearInterval(statusInterval)
-    statusInterval = null
+  if (pollingInterval !== null) {
+    clearInterval(pollingInterval)
+    pollingInterval = null
+    console.log('状态轮询已停止')
   }
 }

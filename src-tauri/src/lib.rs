@@ -54,9 +54,13 @@ pub fn run() {
             // 串口管理命令
             crate::serial::commands::list_serial_ports,
             crate::serial::commands::get_serial_ports_info,
+            crate::serial::commands::refresh_serial_ports,
             crate::serial::commands::open_serial_port,
             crate::serial::commands::close_serial_port,
-            crate::serial::commands::get_serial_status,
+            crate::serial::commands::close_all_serial_ports,
+            crate::serial::commands::get_connection_info,
+            crate::serial::commands::get_all_connections,
+            crate::serial::commands::get_global_runtime_info,
             crate::serial::commands::send_serial_data,
             crate::serial::commands::is_serial_connected,
         ])

@@ -1,10 +1,63 @@
 /// 串口管理模块
 use crate::{log_error, log_info, log_warn};
 use serde::{Deserialize, Serialize};
-use serialport::{SerialPort, SerialPortInfo};
+use serialport::{SerialPort, SerialPortInfo, DataBits, StopBits, Parity, FlowControl};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, RwLock};
+
+// ========== 串口配置（完整参数）==========
+
+/// 完整的串口配置参数
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerialPortConfig {
+    pub port_name: String,
+    pub baud_rate: u32,
+    pub data_bits: u8,        // 5, 6, 7, 8
+    pub stop_bits: u8,        // 1, 2
+    pub parity: String,       // "None", "Odd", "Even"
+    pub flow_control: String, // "None", "Software", "Hardware"
+    pub timeout_ms: u64,
+}
+
+impl SerialPortConfig {
+    /// 转换为 serialport 库的配置
+    pub fn to_builder(&self) -> serialport::SerialPortBuilder {
+        let mut builder = serialport::new(&self.port_name, self.baud_rate)
+            .timeout(Duration::from_millis(self.timeout_ms));
+        
+        // 数据位
+        builder = builder.data_bits(match self.data_bits {
+            5 => DataBits::Five,
+            6 => DataBits::Six,
+            7 => DataBits::Seven,
+            _ => DataBits::Eight,
+        });
+        
+        // 停止位
+        builder = builder.stop_bits(match self.stop_bits {
+            2 => StopBits::Two,
+            _ => StopBits::One,
+        });
+        
+        // 校验位
+        builder = builder.parity(match self.parity.as_str() {
+            "Odd" => Parity::Odd,
+            "Even" => Parity::Even,
+            _ => Parity::None,
+        });
+        
+        // 流控制
+        builder = builder.flow_control(match self.flow_control.as_str() {
+            "Software" => FlowControl::Software,
+            "Hardware" => FlowControl::Hardware,
+            _ => FlowControl::None,
+        });
+        
+        builder
+    }
+}
 
 // ========== 运行时状态（后端管理）==========
 
@@ -17,44 +70,48 @@ pub enum PortStatus {
     Error(String),
 }
 
-/// 串口运行时信息（后端维护的真实状态）
+/// 单个串口连接的运行时信息
 #[derive(Debug, Clone, Serialize)]
-pub struct PortRuntimeInfo {
+pub struct ConnectionInfo {
+    pub connection_id: String,
     pub status: PortStatus,
-    pub connected_port: Option<String>,
-    pub current_baud_rate: Option<u32>,
+    pub config: SerialPortConfig,
     pub bytes_received: u64,
     pub bytes_sent: u64,
     pub last_error: Option<String>,
+    pub created_at: String,  // 创建时间戳
 }
 
-/// 串口管理器（后端状态管理）
+/// 单个串口连接（内部结构）
+struct SerialConnection {
+    port: Arc<Mutex<Box<dyn SerialPort>>>,
+    info: ConnectionInfo,
+}
+
+/// 全局运行时信息（所有串口的状态）
+#[derive(Debug, Clone, Serialize)]
+pub struct GlobalRuntimeInfo {
+    pub available_ports: Vec<String>,           // 所有可用串口
+    pub active_connections: Vec<ConnectionInfo>, // 所有活跃连接
+    pub total_connections: usize,
+}
+
+// ========== 串口管理器（多连接）==========
+
+/// 串口管理器（管理多个串口连接）
 pub struct PortManager {
-    // 当前打开的串口
-    port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
+    // 所有活跃的串口连接（key: connection_id）
+    connections: Arc<RwLock<HashMap<String, SerialConnection>>>,
     
-    // 运行时状态
-    runtime_info: Arc<RwLock<PortRuntimeInfo>>,
-    
-    // 数据通道
-    data_sender: mpsc::UnboundedSender<Vec<u8>>,
+    // 可用串口缓存
+    available_ports_cache: Arc<RwLock<Vec<SerialPortInfo>>>,
 }
 
 impl PortManager {
     pub fn new() -> Self {
-        let (tx, _rx) = mpsc::unbounded_channel();
-        
         Self {
-            port: Arc::new(Mutex::new(None)),
-            runtime_info: Arc::new(RwLock::new(PortRuntimeInfo {
-                status: PortStatus::Disconnected,
-                connected_port: None,
-                current_baud_rate: None,
-                bytes_received: 0,
-                bytes_sent: 0,
-                last_error: None,
-            })),
-            data_sender: tx,
+            connections: Arc::new(RwLock::new(HashMap::new())),
+            available_ports_cache: Arc::new(RwLock::new(Vec::new())),
         }
     }
     
@@ -64,93 +121,140 @@ impl PortManager {
             .map_err(|e| e.to_string())
     }
     
-    /// 打开串口（接收前端传来的配置参数）
+    /// 刷新可用串口缓存
+    pub async fn refresh_available_ports(&self) -> Result<Vec<String>, String> {
+        let ports = Self::list_ports()?;
+        let port_names: Vec<String> = ports.iter().map(|p| p.port_name.clone()).collect();
+        
+        *self.available_ports_cache.write().await = ports;
+        
+        Ok(port_names)
+    }
+    
+    /// 打开新的串口连接
     pub async fn open(
         &self,
-        port_name: String,
-        baud_rate: u32,
+        connection_id: String,
+        config: SerialPortConfig,
     ) -> Result<(), String> {
-        log_info!(&format!("正在打开串口: {} @ {}", port_name, baud_rate));
+        log_info!(&format!("[{}] 正在打开串口: {} @ {} bps", 
+            connection_id, config.port_name, config.baud_rate));
         
-        // 更新状态为连接中
+        // 检查是否已存在
         {
-            let mut info = self.runtime_info.write().await;
-            info.status = PortStatus::Connecting;
+            let conns = self.connections.read().await;
+            if conns.contains_key(&connection_id) {
+                return Err(format!("连接 {} 已存在", connection_id));
+            }
         }
         
-        // 打开串口
-        match serialport::new(&port_name, baud_rate)
-            .timeout(Duration::from_millis(100))
-            .open()
-        {
+        // 尝试打开串口
+        match config.to_builder().open() {
             Ok(port) => {
-                *self.port.lock().await = Some(port);
+                let connection = SerialConnection {
+                    port: Arc::new(Mutex::new(port)),
+                    info: ConnectionInfo {
+                        connection_id: connection_id.clone(),
+                        status: PortStatus::Connected,
+                        config: config.clone(),
+                        bytes_received: 0,
+                        bytes_sent: 0,
+                        last_error: None,
+                        created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                    },
+                };
                 
-                // 更新运行时状态
-                let mut info = self.runtime_info.write().await;
-                info.status = PortStatus::Connected;
-                info.connected_port = Some(port_name);
-                info.current_baud_rate = Some(baud_rate);
-                info.last_error = None;
+                self.connections.write().await.insert(connection_id.clone(), connection);
                 
-                log_info!("串口打开成功");
+                log_info!(&format!("[{}] 串口打开成功", connection_id));
                 Ok(())
             }
             Err(e) => {
                 let error_msg = e.to_string();
-                
-                // 更新错误状态
-                let mut info = self.runtime_info.write().await;
-                info.status = PortStatus::Error(error_msg.clone());
-                info.last_error = Some(error_msg.clone());
-                
-                log_error!(&format!("打开串口失败: {}", error_msg));
+                log_error!(&format!("[{}] 打开串口失败: {}", connection_id, error_msg));
                 Err(error_msg)
             }
         }
     }
     
-    /// 关闭串口
-    pub async fn close(&self) -> Result<(), String> {
-        *self.port.lock().await = None;
+    /// 关闭指定串口连接
+    pub async fn close(&self, connection_id: &str) -> Result<(), String> {
+        let removed = self.connections.write().await.remove(connection_id);
         
-        let mut info = self.runtime_info.write().await;
-        info.status = PortStatus::Disconnected;
-        info.connected_port = None;
-        info.current_baud_rate = None;
-        
-        log_info!("串口已关闭");
-        Ok(())
-    }
-    
-    /// 获取运行时状态（供前端查询）
-    pub async fn get_runtime_info(&self) -> PortRuntimeInfo {
-        self.runtime_info.read().await.clone()
-    }
-    
-    /// 发送数据
-    pub async fn send(&self, data: Vec<u8>) -> Result<usize, String> {
-        let mut port_guard = self.port.lock().await;
-        
-        if let Some(port) = port_guard.as_mut() {
-            match port.write(&data) {
-                Ok(bytes) => {
-                    // 更新统计
-                    let mut info = self.runtime_info.write().await;
-                    info.bytes_sent += bytes as u64;
-                    
-                    Ok(bytes)
-                }
-                Err(e) => Err(e.to_string()),
-            }
+        if removed.is_some() {
+            log_info!(&format!("[{}] 串口已关闭", connection_id));
+            Ok(())
         } else {
-            Err("串口未连接".to_string())
+            Err(format!("连接 {} 不存在", connection_id))
         }
     }
     
-    /// 检查是否已连接
-    pub async fn is_connected(&self) -> bool {
-        let info = self.runtime_info.read().await;
-        info.status == PortStatus::Connected
+    /// 关闭所有连接
+    pub async fn close_all(&self) {
+        let mut conns = self.connections.write().await;
+        let count = conns.len();
+        conns.clear();
+        log_info!(&format!("已关闭所有串口连接 ({}个)", count));
+    }
+    
+    /// 获取指定连接的状态
+    pub async fn get_connection_info(&self, connection_id: &str) -> Result<ConnectionInfo, String> {
+        let conns = self.connections.read().await;
+        
+        conns.get(connection_id)
+            .map(|c| c.info.clone())
+            .ok_or_else(|| format!("连接 {} 不存在", connection_id))
+    }
+    
+    /// 获取所有连接的状态
+    pub async fn get_all_connections(&self) -> Vec<ConnectionInfo> {
+        let conns = self.connections.read().await;
+        conns.values().map(|c| c.info.clone()).collect()
+    }
+    
+    /// 获取全局运行时信息
+    pub async fn get_global_info(&self) -> GlobalRuntimeInfo {
+        let active_connections = self.get_all_connections().await;
+        let available_ports = self.available_ports_cache.read().await
+            .iter()
+            .map(|p| p.port_name.clone())
+            .collect();
+        
+        GlobalRuntimeInfo {
+            available_ports,
+            active_connections: active_connections.clone(),
+            total_connections: active_connections.len(),
+        }
+    }
+    
+    /// 发送数据到指定串口
+    pub async fn send(&self, connection_id: &str, data: Vec<u8>) -> Result<usize, String> {
+        let mut conns = self.connections.write().await;
+        
+        if let Some(conn) = conns.get_mut(connection_id) {
+            let mut port = conn.port.lock().await;
+            match port.write(&data) {
+                Ok(bytes) => {
+                    conn.info.bytes_sent += bytes as u64;
+                    Ok(bytes)
+                }
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    conn.info.status = PortStatus::Error(error_msg.clone());
+                    conn.info.last_error = Some(error_msg.clone());
+                    Err(error_msg)
+                }
+            }
+        } else {
+            Err(format!("连接 {} 不存在", connection_id))
+        }
+    }
+    
+    /// 检查指定连接是否存在且已连接
+    pub async fn is_connected(&self, connection_id: &str) -> bool {
+        let conns = self.connections.read().await;
+        conns.get(connection_id)
+            .map(|c| c.info.status == PortStatus::Connected)
+            .unwrap_or(false)
     }
 }

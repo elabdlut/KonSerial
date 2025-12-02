@@ -13,6 +13,12 @@ pub struct SerialConfig {
     pub stop_bits: u8,
     pub parity: String,
     pub flow_control: String,
+    #[serde(default = "default_timeout")]
+    pub timeout_ms: u64,
+}
+
+fn default_timeout() -> u64 {
+    100
 }
 
 /// 界面配置
@@ -86,6 +92,7 @@ impl AppConfig {
                 stop_bits: 1,
                 parity: String::from("None"),
                 flow_control: String::from("None"),
+                timeout_ms: 100,
             },
             ui: UiConfig {
                 theme: String::from("light"),

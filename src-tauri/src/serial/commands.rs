@@ -1,11 +1,11 @@
 /// 串口相关的 Tauri 命令接口
-use super::port_manager::{PortManager, PortRuntimeInfo};
+use super::port_manager::{PortManager, SerialPortConfig, ConnectionInfo, GlobalRuntimeInfo};
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tauri::State;
 
-/// 串口信息（简化版，用于序列化）
+/// 串口信息
 #[derive(Debug, Clone, Serialize)]
 pub struct SerialPortInfoSimple {
     pub port_name: String,
@@ -37,50 +37,91 @@ pub fn get_serial_ports_info() -> Result<Vec<SerialPortInfoSimple>, String> {
         })
 }
 
-/// 打开串口（使用前端传来的配置）
+/// 刷新可用串口列表
+#[tauri::command]
+pub async fn refresh_serial_ports(
+    manager: State<'_, Arc<Mutex<PortManager>>>,
+) -> Result<Vec<String>, String> {
+    let mgr = manager.lock().await;
+    mgr.refresh_available_ports().await
+}
+
+/// 打开串口（使用完整配置）
 #[tauri::command]
 pub async fn open_serial_port(
     manager: State<'_, Arc<Mutex<PortManager>>>,
-    port_name: String,
-    baud_rate: u32,
+    connection_id: String,
+    config: SerialPortConfig,
 ) -> Result<(), String> {
     let mgr = manager.lock().await;
-    mgr.open(port_name, baud_rate).await
+    mgr.open(connection_id, config).await
 }
 
-/// 关闭串口
+/// 关闭指定串口
 #[tauri::command]
 pub async fn close_serial_port(
     manager: State<'_, Arc<Mutex<PortManager>>>,
+    connection_id: String,
 ) -> Result<(), String> {
     let mgr = manager.lock().await;
-    mgr.close().await
+    mgr.close(&connection_id).await
 }
 
-/// 获取串口运行时状态
+/// 关闭所有串口
 #[tauri::command]
-pub async fn get_serial_status(
+pub async fn close_all_serial_ports(
     manager: State<'_, Arc<Mutex<PortManager>>>,
-) -> Result<PortRuntimeInfo, String> {
+) -> Result<(), String> {
     let mgr = manager.lock().await;
-    Ok(mgr.get_runtime_info().await)
+    mgr.close_all().await;
+    Ok(())
 }
 
-/// 发送数据
+/// 获取指定连接的状态
+#[tauri::command]
+pub async fn get_connection_info(
+    manager: State<'_, Arc<Mutex<PortManager>>>,
+    connection_id: String,
+) -> Result<ConnectionInfo, String> {
+    let mgr = manager.lock().await;
+    mgr.get_connection_info(&connection_id).await
+}
+
+/// 获取所有连接的状态
+#[tauri::command]
+pub async fn get_all_connections(
+    manager: State<'_, Arc<Mutex<PortManager>>>,
+) -> Result<Vec<ConnectionInfo>, String> {
+    let mgr = manager.lock().await;
+    Ok(mgr.get_all_connections().await)
+}
+
+/// 获取全局运行时信息
+#[tauri::command]
+pub async fn get_global_runtime_info(
+    manager: State<'_, Arc<Mutex<PortManager>>>,
+) -> Result<GlobalRuntimeInfo, String> {
+    let mgr = manager.lock().await;
+    Ok(mgr.get_global_info().await)
+}
+
+/// 发送数据到指定串口
 #[tauri::command]
 pub async fn send_serial_data(
     manager: State<'_, Arc<Mutex<PortManager>>>,
+    connection_id: String,
     data: Vec<u8>,
 ) -> Result<usize, String> {
     let mgr = manager.lock().await;
-    mgr.send(data).await
+    mgr.send(&connection_id, data).await
 }
 
-/// 检查串口是否已连接
+/// 检查指定串口是否已连接
 #[tauri::command]
 pub async fn is_serial_connected(
     manager: State<'_, Arc<Mutex<PortManager>>>,
+    connection_id: String,
 ) -> Result<bool, String> {
     let mgr = manager.lock().await;
-    Ok(mgr.is_connected().await)
+    Ok(mgr.is_connected(&connection_id).await)
 }

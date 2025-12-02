@@ -10,6 +10,7 @@ interface SerialConfig {
   stop_bits: number
   parity: string
   flow_control: string
+  timeout_ms: number
 }
 
 interface UiConfig {
