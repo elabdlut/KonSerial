@@ -1,5 +1,5 @@
 /// 串口相关的 Tauri 命令接口
-use super::port_manager::{PortManager, SerialPortConfig, ConnectionInfo, GlobalRuntimeInfo};
+use super::port_manager::{PortManager, SerialPortConfig, ConnectionInfo, GlobalRuntimeInfo, PortInfo};
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -37,11 +37,11 @@ pub fn get_serial_ports_info() -> Result<Vec<SerialPortInfoSimple>, String> {
         })
 }
 
-/// 刷新可用串口列表
+/// 刷新可用串口列表（返回详细信息）
 #[tauri::command]
 pub async fn refresh_serial_ports(
     manager: State<'_, Arc<Mutex<PortManager>>>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<PortInfo>, String> {
     let mgr = manager.lock().await;
     mgr.refresh_available_ports().await
 }

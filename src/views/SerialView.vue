@@ -1,223 +1,644 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import {
+  NButton, NSelect, NSpace, NInput, NTag, NIcon, NTooltip, NSwitch,
+  NScrollbar, NDivider, NStatistic, NInputGroup,
+  useMessage
+} from 'naive-ui'
+import {
+  RefreshOutline, FlashOutline, CloseOutline, SendOutline,
+  TrashOutline, SettingsOutline, PulseOutline, SwapHorizontalOutline
+} from '@vicons/ionicons5'
+import {
+  availablePorts,
+  currentConnectionId,
+  currentConnection,
+  refreshPorts as doRefreshPorts,
+  openSerialPort,
+  closeSerialPort,
+  sendData as doSendData,
+  updateGlobalInfo,
+  generateConnectionId,
+  addReceivedData,
+  getPortDisplayName,
+  type SerialPortConfig,
+} from '@/stores/serial'
+
+const message = useMessage()
 
 // 串口配置
-const portName = ref('')
-const baudRate = ref('9600')
-const dataBits = ref('8')
-const stopBits = ref('1')
+const portName = ref<string | null>(null)
+const baudRate = ref(115200)
+const dataBits = ref(8)
+const stopBits = ref(1)
 const parity = ref('None')
-const isConnected = ref(false)
+const flowControl = ref('None')
 
-// 接收和发送数据
-const receivedData = ref<string[]>([])
-const sendData = ref('')
-const hexMode = ref(false)
+// UI 状态
+const loading = ref(false)
+const hexSend = ref(false)
+const hexDisplay = ref(false)
+const sendText = ref('')
+const receivedData = ref<{ type: string; content: string; time: string }[]>([])
 
-// 串口列表
-const availablePorts = ref<string[]>([])
+// 计算属性
+const isConnected = computed(() => {
+  if (!currentConnection.value) return false
+  return currentConnection.value.status === 'Connected'
+})
 
-// 连接/断开串口
-const toggleConnection = () => {
-  isConnected.value = !isConnected.value
-  if (isConnected.value) {
-    receivedData.value.push(`[系统] 已连接到 ${portName.value}`)
-  } else {
-    receivedData.value.push(`[系统] 已断开连接`)
+const connectionStats = computed(() => {
+  if (!currentConnection.value) return { sent: 0, received: 0 }
+  return {
+    sent: currentConnection.value.bytes_sent,
+    received: currentConnection.value.bytes_received
+  }
+})
+
+const portOptions = computed(() => 
+  availablePorts.value.map(p => ({ 
+    label: getPortDisplayName(p), 
+    value: p.port_name 
+  }))
+)
+
+const baudRateOptions = [
+  { label: '9600', value: 9600 },
+  { label: '19200', value: 19200 },
+  { label: '38400', value: 38400 },
+  { label: '57600', value: 57600 },
+  { label: '115200', value: 115200 },
+  { label: '230400', value: 230400 },
+  { label: '460800', value: 460800 },
+  { label: '921600', value: 921600 },
+]
+
+const dataBitsOptions = [
+  { label: '5 位', value: 5 },
+  { label: '6 位', value: 6 },
+  { label: '7 位', value: 7 },
+  { label: '8 位', value: 8 },
+]
+
+const stopBitsOptions = [
+  { label: '1 位', value: 1 },
+  { label: '2 位', value: 2 },
+]
+
+const parityOptions = [
+  { label: '无校验', value: 'None' },
+  { label: '奇校验', value: 'Odd' },
+  { label: '偶校验', value: 'Even' },
+]
+
+// 刷新串口
+const refreshPorts = async () => {
+  loading.value = true
+  try {
+    await doRefreshPorts()
+    if (availablePorts.value.length > 0 && !portName.value) {
+      portName.value = availablePorts.value[0].port_name
+    }
+    message.success(`发现 ${availablePorts.value.length} 个串口`)
+  } catch (e) {
+    message.error(`刷新失败: ${e}`)
+  } finally {
+    loading.value = false
   }
 }
 
-// 发送数据
-const handleSend = () => {
-  if (!sendData.value.trim()) return
-  
-  receivedData.value.push(`[发送] ${sendData.value}`)
-  sendData.value = ''
+// 连接/断开
+const toggleConnection = async () => {
+  loading.value = true
+  try {
+    if (isConnected.value && currentConnectionId.value) {
+      await closeSerialPort(currentConnectionId.value)
+      addLog('system', '连接已断开')
+      message.info('串口已断开')
+    } else {
+      if (!portName.value) {
+        message.warning('请先选择串口')
+        return
+      }
+      const config: SerialPortConfig = {
+        port_name: portName.value,
+        baud_rate: baudRate.value,
+        data_bits: dataBits.value,
+        stop_bits: stopBits.value,
+        parity: parity.value,
+        flow_control: flowControl.value,
+        timeout_ms: 100,
+      }
+      const connId = generateConnectionId()
+      await openSerialPort(connId, config)
+      addLog('system', `已连接 ${portName.value} (${baudRate.value} bps, ${dataBits.value}-${parity.value[0]}-${stopBits.value})`)
+      message.success('串口连接成功')
+    }
+  } catch (e) {
+    addLog('error', `${e}`)
+    message.error(`操作失败: ${e}`)
+  } finally {
+    loading.value = false
+  }
 }
 
-// 清空接收区
-const clearReceived = () => {
+// 发送
+const handleSend = async () => {
+  if (!sendText.value.trim() || !currentConnectionId.value) return
+  try {
+    const bytes = await doSendData(currentConnectionId.value, sendText.value, hexSend.value)
+    addLog('tx', sendText.value)
+    sendText.value = ''
+  } catch (e) {
+    message.error(`发送失败: ${e}`)
+  }
+}
+
+const addLog = (type: string, content: string) => {
+  const now = new Date()
+  const time = now.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  receivedData.value.push({ type, content, time })
+  
+  // 如果是接收的数据，同步到全局缓存供波形图使用
+  if (type === 'rx') {
+    addReceivedData(content)
+  }
+}
+
+const clearLog = () => {
   receivedData.value = []
 }
 
-// 刷新串口列表
-const refreshPorts = () => {
-  // TODO: 调用 Tauri 命令获取串口列表
-  availablePorts.value = ['/dev/ttyUSB0', '/dev/ttyUSB1', 'COM1', 'COM2']
-  if (availablePorts.value.length > 0) {
-    portName.value = availablePorts.value[0]
-  }
-}
-
-// 初始化时刷新串口列表
-refreshPorts()
+onMounted(async () => {
+  await updateGlobalInfo()
+  await refreshPorts()
+})
 </script>
 
 <template>
-  <div class="p-6 h-full flex flex-col">
-    <!-- 标题栏 -->
-    <div class="mb-6">
-      <h2 class="text-3xl font-bold text-gray-800">串口调试</h2>
-      <p class="text-gray-600 mt-1">配置并控制串口通信</p>
-    </div>
+  <div class="serial-page">
+    <!-- 左侧配置区 -->
+    <aside class="config-panel">
+      <!-- 连接状态 -->
+      <div class="status-section">
+        <div class="status-indicator" :class="{ connected: isConnected }">
+          <div class="status-dot"></div>
+          <span class="status-text">{{ isConnected ? '已连接' : '未连接' }}</span>
+        </div>
+        <div v-if="isConnected && currentConnection" class="connection-info">
+          <span>{{ currentConnection.config.port_name }}</span>
+          <span class="baud">{{ currentConnection.config.baud_rate }} bps</span>
+        </div>
+      </div>
 
-    <!-- 串口配置面板 -->
-    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-      <h3 class="text-lg font-semibold mb-4 text-gray-700">连接配置</h3>
-      
-      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <!-- 串口选择 -->
-        <div class="flex flex-col">
-          <label class="text-sm font-medium text-gray-700 mb-2">串口</label>
-          <div class="flex gap-2">
-            <select 
-              v-model="portName"
+      <NDivider style="margin: 16px 0" />
+
+      <!-- 串口配置 -->
+      <div class="config-section">
+        <div class="section-title">
+          <NIcon :component="SettingsOutline" size="16" />
+          <span>串口配置</span>
+        </div>
+
+        <div class="config-item">
+          <label>串口</label>
+          <NInputGroup>
+            <NSelect
+              v-model:value="portName"
+              :options="portOptions"
               :disabled="isConnected"
-              class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-            >
-              <option v-for="port in availablePorts" :key="port" :value="port">
-                {{ port }}
-              </option>
-            </select>
-            <button 
-              @click="refreshPorts"
+              placeholder="选择..."
+              size="small"
+              style="flex: 1"
+            />
+            <NTooltip>
+              <template #trigger>
+                <NButton 
+                  size="small" 
+                  :loading="loading"
+                  :disabled="isConnected"
+                  @click="refreshPorts"
+                >
+                  <template #icon>
+                    <NIcon :component="RefreshOutline" />
+                  </template>
+                </NButton>
+              </template>
+              刷新串口
+            </NTooltip>
+          </NInputGroup>
+        </div>
+
+        <div class="config-item">
+          <label>波特率</label>
+          <NSelect
+            v-model:value="baudRate"
+            :options="baudRateOptions"
+            :disabled="isConnected"
+            size="small"
+          />
+        </div>
+
+        <div class="config-row">
+          <div class="config-item half">
+            <label>数据位</label>
+            <NSelect
+              v-model:value="dataBits"
+              :options="dataBitsOptions"
               :disabled="isConnected"
-              class="px-3 py-2 bg-gray-200 rounded-md hover:bg-gray-300 disabled:opacity-50"
-              title="刷新"
-            >
-              🔄
-            </button>
+              size="small"
+            />
+          </div>
+          <div class="config-item half">
+            <label>停止位</label>
+            <NSelect
+              v-model:value="stopBits"
+              :options="stopBitsOptions"
+              :disabled="isConnected"
+              size="small"
+            />
           </div>
         </div>
 
-        <!-- 波特率 -->
-        <div class="flex flex-col">
-          <label class="text-sm font-medium text-gray-700 mb-2">波特率</label>
-          <select 
-            v-model="baudRate"
+        <div class="config-item">
+          <label>校验</label>
+          <NSelect
+            v-model:value="parity"
+            :options="parityOptions"
             :disabled="isConnected"
-            class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-          >
-            <option value="9600">9600</option>
-            <option value="19200">19200</option>
-            <option value="38400">38400</option>
-            <option value="57600">57600</option>
-            <option value="115200">115200</option>
-          </select>
-        </div>
-
-        <!-- 数据位 -->
-        <div class="flex flex-col">
-          <label class="text-sm font-medium text-gray-700 mb-2">数据位</label>
-          <select 
-            v-model="dataBits"
-            :disabled="isConnected"
-            class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-          >
-            <option value="5">5</option>
-            <option value="6">6</option>
-            <option value="7">7</option>
-            <option value="8">8</option>
-          </select>
-        </div>
-
-        <!-- 停止位 -->
-        <div class="flex flex-col">
-          <label class="text-sm font-medium text-gray-700 mb-2">停止位</label>
-          <select 
-            v-model="stopBits"
-            :disabled="isConnected"
-            class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-          >
-            <option value="1">1</option>
-            <option value="1.5">1.5</option>
-            <option value="2">2</option>
-          </select>
-        </div>
-
-        <!-- 校验位 -->
-        <div class="flex flex-col">
-          <label class="text-sm font-medium text-gray-700 mb-2">校验位</label>
-          <select 
-            v-model="parity"
-            :disabled="isConnected"
-            class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-          >
-            <option value="None">无</option>
-            <option value="Odd">奇校验</option>
-            <option value="Even">偶校验</option>
-          </select>
-        </div>
-
-        <!-- 连接按钮 -->
-        <div class="flex flex-col justify-end">
-          <button
-            @click="toggleConnection"
-            class="px-6 py-2 rounded-md font-medium transition-colors"
-            :class="isConnected 
-              ? 'bg-red-500 hover:bg-red-600 text-white' 
-              : 'bg-green-500 hover:bg-green-600 text-white'
-            "
-          >
-            {{ isConnected ? '断开' : '连接' }}
-          </button>
+            size="small"
+          />
         </div>
       </div>
-    </div>
 
-    <!-- 数据收发区 -->
-    <div class="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0">
-      <!-- 接收区 -->
-      <div class="lg:col-span-2 bg-white rounded-lg shadow-md p-6 flex flex-col">
-        <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold text-gray-700">接收数据</h3>
-          <div class="flex gap-2">
-            <label class="flex items-center gap-2 text-sm">
-              <input type="checkbox" v-model="hexMode" class="rounded">
-              <span>HEX显示</span>
-            </label>
-            <button
-              @click="clearReceived"
-              class="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded-md text-sm"
-            >
+      <!-- 连接按钮 -->
+      <NButton
+        :type="isConnected ? 'error' : 'primary'"
+        :loading="loading"
+        :disabled="!portName && !isConnected"
+        block
+        size="large"
+        @click="toggleConnection"
+        style="margin-top: 20px"
+      >
+        <template #icon>
+          <NIcon :component="isConnected ? CloseOutline : FlashOutline" />
+        </template>
+        {{ isConnected ? '断开连接' : '打开连接' }}
+      </NButton>
+
+      <!-- 统计 -->
+      <div v-if="isConnected" class="stats-section">
+        <NDivider style="margin: 20px 0 16px" />
+        <div class="section-title">
+          <NIcon :component="PulseOutline" size="16" />
+          <span>数据统计</span>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <span class="stat-label">TX</span>
+            <span class="stat-value tx">{{ connectionStats.sent }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">RX</span>
+            <span class="stat-value rx">{{ connectionStats.received }}</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 右侧主区域 -->
+    <main class="main-area">
+      <!-- 终端区域 -->
+      <div class="terminal-section">
+        <div class="terminal-header">
+          <div class="terminal-title">
+            <NIcon :component="SwapHorizontalOutline" size="18" />
+            <span>数据终端</span>
+            <NTag size="small" :bordered="false" type="info">{{ receivedData.length }}</NTag>
+          </div>
+          <NSpace>
+            <NSwitch v-model:value="hexDisplay" size="small">
+              <template #checked>HEX</template>
+              <template #unchecked>ASCII</template>
+            </NSwitch>
+            <NButton size="small" quaternary @click="clearLog">
+              <template #icon><NIcon :component="TrashOutline" /></template>
               清空
-            </button>
-          </div>
+            </NButton>
+          </NSpace>
         </div>
-        
-        <div class="flex-1 bg-gray-50 border border-gray-300 rounded-md p-4 overflow-auto font-mono text-sm">
-          <div v-for="(line, index) in receivedData" :key="index" class="mb-1">
-            {{ line }}
+
+        <NScrollbar class="terminal-content">
+          <div class="terminal-body">
+            <div 
+              v-for="(item, idx) in receivedData" 
+              :key="idx"
+              class="log-line"
+              :class="item.type"
+            >
+              <span class="log-time">{{ item.time }}</span>
+              <span class="log-type">
+                {{ item.type === 'tx' ? 'TX' : item.type === 'rx' ? 'RX' : item.type === 'system' ? 'SYS' : 'ERR' }}
+              </span>
+              <span class="log-content">{{ item.content }}</span>
+            </div>
+            <div v-if="receivedData.length === 0" class="terminal-empty">
+              <NIcon :component="SwapHorizontalOutline" size="40" />
+              <p>连接串口后开始通信</p>
+            </div>
           </div>
-          <div v-if="receivedData.length === 0" class="text-gray-400 text-center mt-8">
-            暂无数据
-          </div>
-        </div>
+        </NScrollbar>
       </div>
 
-      <!-- 发送区 -->
-      <div class="bg-white rounded-lg shadow-md p-6 flex flex-col">
-        <h3 class="text-lg font-semibold text-gray-700 mb-4">发送数据</h3>
-        
-        <textarea
-          v-model="sendData"
-          :disabled="!isConnected"
-          placeholder="输入要发送的数据..."
-          class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:bg-gray-100"
-        ></textarea>
-
-        <button
-          @click="handleSend"
-          :disabled="!isConnected || !sendData.trim()"
-          class="mt-4 px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          发送
-        </button>
+      <!-- 发送区域 -->
+      <div class="send-section">
+        <div class="send-options">
+          <NSwitch v-model:value="hexSend" size="small">
+            <template #checked>HEX发送</template>
+            <template #unchecked>文本发送</template>
+          </NSwitch>
+        </div>
+        <div class="send-input">
+          <NInput
+            v-model:value="sendText"
+            :disabled="!isConnected"
+            :placeholder="hexSend ? '输入十六进制数据，如: 01 02 03 FF' : '输入要发送的文本...'"
+            @keydown.enter="handleSend"
+            clearable
+          />
+          <NButton
+            type="primary"
+            :disabled="!isConnected || !sendText.trim()"
+            @click="handleSend"
+          >
+            <template #icon><NIcon :component="SendOutline" /></template>
+            发送
+          </NButton>
+        </div>
       </div>
-    </div>
+    </main>
   </div>
 </template>
 
 <style scoped>
-/* 所有样式通过 Tailwind 实现 */
+.serial-page {
+  display: flex;
+  height: 100%;
+  background: #f5f7fa;
+  gap: 16px;
+  padding: 16px;
+}
+
+/* 左侧配置面板 */
+.config-panel {
+  width: 280px;
+  flex-shrink: 0;
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+}
+
+.status-section {
+  text-align: center;
+}
+
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #f5f5f5;
+  border-radius: 20px;
+  transition: all 0.3s;
+}
+
+.status-indicator.connected {
+  background: #e8f5e9;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #bbb;
+}
+
+.status-indicator.connected .status-dot {
+  background: #4caf50;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+}
+
+.status-indicator.connected .status-text {
+  color: #2e7d32;
+}
+
+.connection-info {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #666;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.connection-info .baud {
+  color: #999;
+}
+
+/* 配置区 */
+.config-section {
+  flex: 1;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 16px;
+}
+
+.config-item {
+  margin-bottom: 12px;
+}
+
+.config-item label {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 6px;
+}
+
+.config-row {
+  display: flex;
+  gap: 12px;
+}
+
+.config-item.half {
+  flex: 1;
+}
+
+/* 统计 */
+.stats-section {
+  margin-top: auto;
+}
+
+.stats-grid {
+  display: flex;
+  gap: 12px;
+}
+
+.stat-item {
+  flex: 1;
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.stat-label {
+  display: block;
+  font-size: 11px;
+  color: #999;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 600;
+  font-family: 'SF Mono', Monaco, monospace;
+}
+
+.stat-value.tx { color: #1976d2; }
+.stat-value.rx { color: #388e3c; }
+
+/* 右侧主区域 */
+.main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* 终端区域 */
+.terminal-section {
+  flex: 1;
+  background: #1e1e1e;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.terminal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #252526;
+  border-bottom: 1px solid #333;
+}
+
+.terminal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ccc;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.terminal-content {
+  flex: 1;
+  min-height: 0;
+}
+
+.terminal-body {
+  padding: 12px 16px;
+  min-height: 100%;
+}
+
+.log-line {
+  display: flex;
+  gap: 12px;
+  padding: 4px 0;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.log-time {
+  color: #666;
+  flex-shrink: 0;
+}
+
+.log-type {
+  width: 32px;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.log-line.tx .log-type { color: #64b5f6; }
+.log-line.rx .log-type { color: #81c784; }
+.log-line.system .log-type { color: #ffb74d; }
+.log-line.error .log-type { color: #e57373; }
+
+.log-content {
+  color: #d4d4d4;
+  word-break: break-all;
+}
+
+.terminal-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: #555;
+  gap: 12px;
+}
+
+.terminal-empty p {
+  font-size: 14px;
+}
+
+/* 发送区域 */
+.send-section {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.send-options {
+  margin-bottom: 12px;
+}
+
+.send-input {
+  display: flex;
+  gap: 12px;
+}
+
+.send-input :deep(.n-input) {
+  flex: 1;
+}
 </style>

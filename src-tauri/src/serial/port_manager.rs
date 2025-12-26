@@ -91,9 +91,21 @@ struct SerialConnection {
 /// 全局运行时信息（所有串口的状态）
 #[derive(Debug, Clone, Serialize)]
 pub struct GlobalRuntimeInfo {
-    pub available_ports: Vec<String>,           // 所有可用串口
+    pub available_ports: Vec<PortInfo>,           // 所有可用串口（详细信息）
     pub active_connections: Vec<ConnectionInfo>, // 所有活跃连接
     pub total_connections: usize,
+}
+
+/// 串口详细信息
+#[derive(Debug, Clone, Serialize)]
+pub struct PortInfo {
+    pub port_name: String,
+    pub port_type: String,       // "USB", "PCI", "Bluetooth", "Unknown"
+    pub manufacturer: Option<String>,
+    pub product: Option<String>,
+    pub serial_number: Option<String>,
+    pub vid: Option<u16>,        // USB Vendor ID
+    pub pid: Option<u16>,        // USB Product ID
 }
 
 // ========== 串口管理器（多连接）==========
@@ -121,14 +133,43 @@ impl PortManager {
             .map_err(|e| e.to_string())
     }
     
-    /// 刷新可用串口缓存
-    pub async fn refresh_available_ports(&self) -> Result<Vec<String>, String> {
+    /// 刷新可用串口缓存（返回详细信息）
+    pub async fn refresh_available_ports(&self) -> Result<Vec<PortInfo>, String> {
         let ports = Self::list_ports()?;
-        let port_names: Vec<String> = ports.iter().map(|p| p.port_name.clone()).collect();
+        let port_infos: Vec<PortInfo> = ports.iter().map(|p| {
+            let (port_type, manufacturer, product, serial_number, vid, pid) = match &p.port_type {
+                serialport::SerialPortType::UsbPort(usb_info) => (
+                    "USB".to_string(),
+                    usb_info.manufacturer.clone(),
+                    usb_info.product.clone(),
+                    usb_info.serial_number.clone(),
+                    Some(usb_info.vid),
+                    Some(usb_info.pid),
+                ),
+                serialport::SerialPortType::PciPort => (
+                    "PCI".to_string(), None, None, None, None, None
+                ),
+                serialport::SerialPortType::BluetoothPort => (
+                    "Bluetooth".to_string(), None, None, None, None, None
+                ),
+                serialport::SerialPortType::Unknown => (
+                    "Unknown".to_string(), None, None, None, None, None
+                ),
+            };
+            PortInfo {
+                port_name: p.port_name.clone(),
+                port_type,
+                manufacturer,
+                product,
+                serial_number,
+                vid,
+                pid,
+            }
+        }).collect();
         
         *self.available_ports_cache.write().await = ports;
         
-        Ok(port_names)
+        Ok(port_infos)
     }
     
     /// 打开新的串口连接
@@ -215,10 +256,38 @@ impl PortManager {
     /// 获取全局运行时信息
     pub async fn get_global_info(&self) -> GlobalRuntimeInfo {
         let active_connections = self.get_all_connections().await;
-        let available_ports = self.available_ports_cache.read().await
-            .iter()
-            .map(|p| p.port_name.clone())
-            .collect();
+        let cached_ports = self.available_ports_cache.read().await;
+        
+        let available_ports: Vec<PortInfo> = cached_ports.iter().map(|p| {
+            let (port_type, manufacturer, product, serial_number, vid, pid) = match &p.port_type {
+                serialport::SerialPortType::UsbPort(usb_info) => (
+                    "USB".to_string(),
+                    usb_info.manufacturer.clone(),
+                    usb_info.product.clone(),
+                    usb_info.serial_number.clone(),
+                    Some(usb_info.vid),
+                    Some(usb_info.pid),
+                ),
+                serialport::SerialPortType::PciPort => (
+                    "PCI".to_string(), None, None, None, None, None
+                ),
+                serialport::SerialPortType::BluetoothPort => (
+                    "Bluetooth".to_string(), None, None, None, None, None
+                ),
+                serialport::SerialPortType::Unknown => (
+                    "Unknown".to_string(), None, None, None, None, None
+                ),
+            };
+            PortInfo {
+                port_name: p.port_name.clone(),
+                port_type,
+                manufacturer,
+                product,
+                serial_number,
+                vid,
+                pid,
+            }
+        }).collect();
         
         GlobalRuntimeInfo {
             available_ports,

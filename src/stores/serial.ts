@@ -34,14 +34,25 @@ export interface ConnectionInfo {
   created_at: string
 }
 
+/** 串口详细信息 */
+export interface PortInfo {
+  port_name: string
+  port_type: string       // "USB", "PCI", "Bluetooth", "Unknown"
+  manufacturer: string | null
+  product: string | null
+  serial_number: string | null
+  vid: number | null      // USB Vendor ID
+  pid: number | null      // USB Product ID
+}
+
 /** 全局运行时信息 */
 export interface GlobalRuntimeInfo {
-  available_ports: string[]
+  available_ports: PortInfo[]
   active_connections: ConnectionInfo[]
   total_connections: number
 }
 
-/** 串口简单信息 */
+/** 串口简单信息（兼容旧版） */
 export interface SerialPortInfo {
   port_name: string
   port_type: string
@@ -52,8 +63,22 @@ export interface SerialPortInfo {
 /** 全局运行时信息 */
 export const globalInfo = ref<GlobalRuntimeInfo | null>(null)
 
-/** 可用串口列表 */
+/** 可用串口列表（详细信息） */
 export const availablePorts = computed(() => globalInfo.value?.available_ports || [])
+
+/** 获取串口显示名称（包含产品名） */
+export function getPortDisplayName(port: PortInfo): string {
+  if (port.product) {
+    return `${port.port_name} (${port.product})`
+  }
+  if (port.port_type === 'USB' && port.vid && port.pid) {
+    return `${port.port_name} [USB ${port.vid.toString(16).toUpperCase()}:${port.pid.toString(16).toUpperCase()}]`
+  }
+  if (port.port_type !== 'Unknown') {
+    return `${port.port_name} [${port.port_type}]`
+  }
+  return port.port_name
+}
 
 /** 所有活跃连接 */
 export const activeConnections = computed(() => globalInfo.value?.active_connections || [])
@@ -66,6 +91,28 @@ export const currentConnection = computed(() => {
   if (!currentConnectionId.value) return null
   return activeConnections.value.find(c => c.connection_id === currentConnectionId.value) || null
 })
+
+/** 接收数据缓存（全局共享，供波形图等页面使用） */
+export interface ReceivedLine {
+  content: string
+  time: number
+}
+export const receivedBuffer = ref<ReceivedLine[]>([])
+export const maxBufferSize = ref(10000)
+
+/** 添加接收数据到缓存 */
+export function addReceivedData(content: string) {
+  receivedBuffer.value.push({ content, time: Date.now() })
+  // 限制缓存大小
+  while (receivedBuffer.value.length > maxBufferSize.value) {
+    receivedBuffer.value.shift()
+  }
+}
+
+/** 清空接收缓存 */
+export function clearReceivedBuffer() {
+  receivedBuffer.value = []
+}
 
 // ========== 工具函数 ==========
 
@@ -96,7 +143,7 @@ export function createConfigFromApp(portName?: string): SerialPortConfig {
 /** 刷新可用串口列表 */
 export async function refreshPorts() {
   try {
-    const ports = await invoke<string[]>('refresh_serial_ports')
+    const ports = await invoke<PortInfo[]>('refresh_serial_ports')
     console.log('串口列表已刷新:', ports)
     await updateGlobalInfo()
   } catch (error) {
