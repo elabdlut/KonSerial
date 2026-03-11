@@ -1,6 +1,7 @@
 // 串口状态管理（多连接架构）
 import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { appConfig } from './config'
 
 // ========== 类型定义 ==========
@@ -94,6 +95,7 @@ export const currentConnection = computed(() => {
 
 /** 接收数据缓存（全局共享，供波形图等页面使用） */
 export interface ReceivedLine {
+  connection_id: string
   content: string
   time: number
 }
@@ -101,8 +103,8 @@ export const receivedBuffer = ref<ReceivedLine[]>([])
 export const maxBufferSize = ref(10000)
 
 /** 添加接收数据到缓存 */
-export function addReceivedData(content: string) {
-  receivedBuffer.value.push({ content, time: Date.now() })
+export function addReceivedData(connectionId: string, content: string) {
+  receivedBuffer.value.push({ connection_id: connectionId, content, time: Date.now() })
   // 限制缓存大小
   while (receivedBuffer.value.length > maxBufferSize.value) {
     receivedBuffer.value.shift()
@@ -289,6 +291,52 @@ export async function isConnected(connectionId: string): Promise<boolean> {
   } catch (error) {
     console.error('检查连接状态失败:', error)
     return false
+  }
+}
+
+// ========== 事件监听（接收后端推送的串口数据） ==========
+
+/** 串口数据事件载荷 */
+interface SerialDataPayload {
+  connection_id: string
+  data: number[]
+}
+
+/** 串口数据回调类型（传递原始字节，由组件负责解码） */
+type SerialDataCallback = (connectionId: string, rawData: Uint8Array) => void
+const dataCallbacks: SerialDataCallback[] = []
+
+let unlistenSerialData: UnlistenFn | null = null
+
+/** 启动串口数据事件监听 */
+export async function startSerialDataListener() {
+  if (unlistenSerialData) return
+
+  unlistenSerialData = await listen<SerialDataPayload>('serial-data', (event) => {
+    const { connection_id, data } = event.payload
+    const rawData = new Uint8Array(data)
+
+    // 传递原始字节给回调，由各组件根据选择的编码解码显示
+    dataCallbacks.forEach(cb => cb(connection_id, rawData))
+  })
+  console.log('串口数据监听已启动')
+}
+
+/** 停止串口数据事件监听 */
+export function stopSerialDataListener() {
+  if (unlistenSerialData) {
+    unlistenSerialData()
+    unlistenSerialData = null
+    console.log('串口数据监听已停止')
+  }
+}
+
+/** 注册串口数据回调（返回取消函数） */
+export function onSerialData(callback: SerialDataCallback): () => void {
+  dataCallbacks.push(callback)
+  return () => {
+    const idx = dataCallbacks.indexOf(callback)
+    if (idx >= 0) dataCallbacks.splice(idx, 1)
   }
 }
 

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   NButton, NSelect, NSpace, NInput, NTag, NIcon, NTooltip, NSwitch,
-  NScrollbar, NDivider, NStatistic, NInputGroup,
+  NScrollbar, NDivider, NInputGroup,
   useMessage
 } from 'naive-ui'
 import {
@@ -21,6 +21,9 @@ import {
   generateConnectionId,
   addReceivedData,
   getPortDisplayName,
+  onSerialData,
+  startStatusPolling,
+  stopStatusPolling,
   type SerialPortConfig,
 } from '@/stores/serial'
 
@@ -39,7 +42,18 @@ const loading = ref(false)
 const hexSend = ref(false)
 const hexDisplay = ref(false)
 const sendText = ref('')
-const receivedData = ref<{ type: string; content: string; time: string }[]>([])
+const encoding = ref('utf-8')
+const appendNewline = ref('none')
+const autoScroll = ref(true)
+const scrollbarRef = ref()
+
+interface LogEntry {
+  type: string
+  content: string
+  rawBytes?: number[]
+  time: string
+}
+const receivedData = ref<LogEntry[]>([])
 
 // 计算属性
 const isConnected = computed(() => {
@@ -90,6 +104,21 @@ const parityOptions = [
   { label: '奇校验', value: 'Odd' },
   { label: '偶校验', value: 'Even' },
 ]
+
+const encodingOptions = [
+  { label: 'UTF-8', value: 'utf-8' },
+  { label: 'GBK', value: 'gbk' },
+]
+
+const newlineOptions = [
+  { label: '无', value: 'none' },
+  { label: 'LF (\\n)', value: '\n' },
+  { label: 'CRLF (\\r\\n)', value: '\r\n' },
+]
+
+const formatHex = (bytes: number[]) => {
+  return bytes.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ')
+}
 
 // 刷新串口
 const refreshPorts = async () => {
@@ -146,7 +175,11 @@ const toggleConnection = async () => {
 const handleSend = async () => {
   if (!sendText.value.trim() || !currentConnectionId.value) return
   try {
-    const bytes = await doSendData(currentConnectionId.value, sendText.value, hexSend.value)
+    let textToSend = sendText.value
+    if (!hexSend.value && appendNewline.value !== 'none') {
+      textToSend += appendNewline.value
+    }
+    await doSendData(currentConnectionId.value, textToSend, hexSend.value)
     addLog('tx', sendText.value)
     sendText.value = ''
   } catch (e) {
@@ -154,14 +187,20 @@ const handleSend = async () => {
   }
 }
 
-const addLog = (type: string, content: string) => {
+const addLog = (type: string, content: string, rawBytes?: number[]) => {
   const now = new Date()
   const time = now.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  receivedData.value.push({ type, content, time })
+  receivedData.value.push({ type, content, time, rawBytes })
   
   // 如果是接收的数据，同步到全局缓存供波形图使用
-  if (type === 'rx') {
-    addReceivedData(content)
+  if (type === 'rx' && currentConnectionId.value) {
+    addReceivedData(currentConnectionId.value, content)
+  }
+  // 自动滚动到底部
+  if (autoScroll.value) {
+    nextTick(() => {
+      scrollbarRef.value?.scrollTo({ top: 999999 })
+    })
   }
 }
 
@@ -169,9 +208,25 @@ const clearLog = () => {
   receivedData.value = []
 }
 
+// 注册串口数据回调，接收后端推送的数据
+let unsubscribeData: (() => void) | null = null
+
 onMounted(async () => {
+  unsubscribeData = onSerialData((connId, rawData) => {
+    if (connId === currentConnectionId.value) {
+      const decoder = new TextDecoder(encoding.value)
+      const text = decoder.decode(rawData)
+      addLog('rx', text, Array.from(rawData))
+    }
+  })
+  startStatusPolling(1000)
   await updateGlobalInfo()
   await refreshPorts()
+})
+
+onUnmounted(() => {
+  unsubscribeData?.()
+  stopStatusPolling()
 })
 </script>
 
@@ -317,10 +372,20 @@ onMounted(async () => {
             <span>数据终端</span>
             <NTag size="small" :bordered="false" type="info">{{ receivedData.length }}</NTag>
           </div>
-          <NSpace>
+          <NSpace align="center" :size="8">
+            <NSelect
+              v-model:value="encoding"
+              :options="encodingOptions"
+              size="small"
+              style="width: 90px"
+            />
             <NSwitch v-model:value="hexDisplay" size="small">
               <template #checked>HEX</template>
-              <template #unchecked>ASCII</template>
+              <template #unchecked>文本</template>
+            </NSwitch>
+            <NSwitch v-model:value="autoScroll" size="small">
+              <template #checked>滚动</template>
+              <template #unchecked>滚动</template>
             </NSwitch>
             <NButton size="small" quaternary @click="clearLog">
               <template #icon><NIcon :component="TrashOutline" /></template>
@@ -329,7 +394,7 @@ onMounted(async () => {
           </NSpace>
         </div>
 
-        <NScrollbar class="terminal-content">
+        <NScrollbar ref="scrollbarRef" class="terminal-content">
           <div class="terminal-body">
             <div 
               v-for="(item, idx) in receivedData" 
@@ -341,7 +406,9 @@ onMounted(async () => {
               <span class="log-type">
                 {{ item.type === 'tx' ? 'TX' : item.type === 'rx' ? 'RX' : item.type === 'system' ? 'SYS' : 'ERR' }}
               </span>
-              <span class="log-content">{{ item.content }}</span>
+              <span class="log-content">
+                {{ hexDisplay && item.rawBytes ? formatHex(item.rawBytes) : item.content }}
+              </span>
             </div>
             <div v-if="receivedData.length === 0" class="terminal-empty">
               <NIcon :component="SwapHorizontalOutline" size="40" />
@@ -354,10 +421,19 @@ onMounted(async () => {
       <!-- 发送区域 -->
       <div class="send-section">
         <div class="send-options">
-          <NSwitch v-model:value="hexSend" size="small">
-            <template #checked>HEX发送</template>
-            <template #unchecked>文本发送</template>
-          </NSwitch>
+          <NSpace align="center" :size="12">
+            <NSwitch v-model:value="hexSend" size="small">
+              <template #checked>HEX发送</template>
+              <template #unchecked>文本发送</template>
+            </NSwitch>
+            <NSelect
+              v-if="!hexSend"
+              v-model:value="appendNewline"
+              :options="newlineOptions"
+              size="small"
+              style="width: 120px"
+            />
+          </NSpace>
         </div>
         <div class="send-input">
           <NInput

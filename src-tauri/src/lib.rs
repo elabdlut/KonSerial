@@ -7,16 +7,17 @@ mod script;
 mod serial;
 mod visualization;
 
-use crate::utils::config::AppConfig;
+use crate::utils::config::{AppConfig, default_config_path};
 use crate::utils::logger::{Logger, LoggerConfig};
 use crate::serial::port_manager::PortManager;
+use crate::data_logger::{DataLogger, default_db_path};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
-    log::info!("Greet 被调用: name={}", name);
+    log_info!(&format!("Greet 被调用: name={}", name));
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
@@ -27,14 +28,21 @@ pub fn run() {
 
     log_info!("应用启动中...");
 
-    // 初始化配置
-    let config_path = "/home/sratle/.config/konserial/config.json";
-    let _config = AppConfig::init(config_path);
+    // 初始化配置（跨平台动态路径）
+    let config_path = default_config_path();
+    let _config = AppConfig::init(&config_path);
     
-    // 初始化串口管理器
-    let port_manager = Arc::new(Mutex::new(PortManager::new()));
+    // 初始化数据日志管理器（SQLite）
+    let db_path = default_db_path();
+    let data_logger = Arc::new(
+        DataLogger::new(&db_path).expect("初始化数据库失败")
+    );
+    log_info!(&format!("数据库已初始化: {}", db_path.display()));
+    
+    // 初始化串口管理器（注入 DataLogger）
+    let port_manager = Arc::new(Mutex::new(PortManager::new(data_logger.clone())));
 
-    log_warn!("应用启动成功");
+    log_info!("应用启动成功");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -42,8 +50,9 @@ pub fn run() {
         .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
-        // 注册串口管理器为全局状态
+        // 注册全局状态
         .manage(port_manager)
+        .manage(data_logger)
         .invoke_handler(tauri::generate_handler![
             // 基础命令
             greet,
@@ -63,6 +72,11 @@ pub fn run() {
             crate::serial::commands::get_global_runtime_info,
             crate::serial::commands::send_serial_data,
             crate::serial::commands::is_serial_connected,
+            // 数据日志命令
+            crate::data_logger::commands::get_sessions,
+            crate::data_logger::commands::get_session_data,
+            crate::data_logger::commands::delete_session,
+            crate::data_logger::commands::export_session_csv,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

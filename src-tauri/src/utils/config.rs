@@ -1,8 +1,19 @@
+//! 配置管理模块
+//! 记录一些配置信息，便于用户退出时保存信息，例如界面主题设置、串口相关设置
 use crate::{log_error, log_info, log_warn};
-/// 记录一些配置信息，便于用户退出时保存信息，例如界面主题设置、串口相关设置
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+/// 获取默认配置文件路径（跨平台）
+/// Linux: ~/.config/konserial/config.json
+/// macOS: ~/Library/Application Support/konserial/config.json
+/// Windows: C:\Users\<User>\AppData\Roaming\konserial\config.json
+pub fn default_config_path() -> PathBuf {
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."));
+    config_dir.join("konserial").join("config.json")
+}
 
 /// 串口配置
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -115,6 +126,12 @@ impl AppConfig {
     /// 保存配置到存储的路径
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(path) = &self.config_path {
+            // 自动创建父目录
+            if let Some(parent) = path.parent() {
+                if !parent.exists() {
+                    fs::create_dir_all(parent)?;
+                }
+            }
             let config_str = serde_json::to_string_pretty(self)?;
             fs::write(path, config_str)?;
             log_info!("配置文件已保存");

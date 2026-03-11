@@ -2,8 +2,8 @@
 use super::port_manager::{PortManager, SerialPortConfig, ConnectionInfo, GlobalRuntimeInfo, PortInfo};
 use serde::Serialize;
 use std::sync::Arc;
+use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
-use tauri::State;
 
 /// 串口信息
 #[derive(Debug, Clone, Serialize)]
@@ -49,12 +49,13 @@ pub async fn refresh_serial_ports(
 /// 打开串口（使用完整配置）
 #[tauri::command]
 pub async fn open_serial_port(
+    app: AppHandle,
     manager: State<'_, Arc<Mutex<PortManager>>>,
     connection_id: String,
     config: SerialPortConfig,
 ) -> Result<(), String> {
     let mgr = manager.lock().await;
-    mgr.open(connection_id, config).await
+    mgr.open(connection_id, config, app).await
 }
 
 /// 关闭指定串口
