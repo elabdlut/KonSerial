@@ -133,6 +133,8 @@ const zhCN: Messages = {
   'chart.noExportData': '没有数据可导出',
   'chart.exported': '数据已导出',
   'chart.cleared': '图表已清空',
+  'chart.noConnection': '请先连接串口',
+  'chart.goLive': '回到实时',
 
   // === ScriptView ===
   'script.files': '脚本文件',
@@ -153,6 +155,9 @@ const zhCN: Messages = {
   'script.savedMsg': '脚本已保存',
   'script.newCreated': '已创建新脚本',
   'script.openWip': '打开文件功能开发中...',
+  'script.noConnection': '请先连接串口',
+  'script.completed': '脚本执行完成',
+  'script.openedMsg': '文件已打开',
 }
 
 const enUS: Messages = {
@@ -284,6 +289,8 @@ const enUS: Messages = {
   'chart.noExportData': 'No data to export',
   'chart.exported': 'Data exported',
   'chart.cleared': 'Chart cleared',
+  'chart.noConnection': 'Please connect a serial port first',
+  'chart.goLive': 'Go Live',
 
   // === ScriptView ===
   'script.files': 'Scripts',
@@ -304,6 +311,9 @@ const enUS: Messages = {
   'script.savedMsg': 'Script saved',
   'script.newCreated': 'New script created',
   'script.openWip': 'Open file feature in development...',
+  'script.noConnection': 'Please connect a serial port first',
+  'script.completed': 'Script completed',
+  'script.openedMsg': 'File opened',
 }
 
 const locales: Record<string, Messages> = {
