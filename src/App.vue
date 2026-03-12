@@ -1,16 +1,31 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import Layout from './components/Layout.vue'
-import { NMessageProvider, NConfigProvider, zhCN, dateZhCN } from 'naive-ui'
+import { NMessageProvider, NConfigProvider, darkTheme } from 'naive-ui'
 import { startSerialDataListener } from '@/stores/serial'
+import { loadConfig } from '@/stores/config'
+import {
+  isDark, naiveThemeOverrides, naiveLocale, naiveDateLocale,
+  applyThemeToDOM, applyFontSizeToDOM
+} from '@/stores/settings'
 
-onMounted(() => {
+const naiveTheme = computed(() => isDark.value ? darkTheme : null)
+
+onMounted(async () => {
+  await loadConfig()
+  applyThemeToDOM()
+  applyFontSizeToDOM()
   startSerialDataListener()
 })
 </script>
 
 <template>
-  <NConfigProvider :locale="zhCN" :date-locale="dateZhCN">
+  <NConfigProvider
+    :theme="naiveTheme"
+    :theme-overrides="naiveThemeOverrides"
+    :locale="naiveLocale"
+    :date-locale="naiveDateLocale"
+  >
     <NMessageProvider>
       <Layout />
     </NMessageProvider>

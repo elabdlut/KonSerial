@@ -1,83 +1,65 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import {
   NButton, NSelect, NSpace, NIcon, NSwitch, NInputNumber,
-  NDivider, NTag, NScrollbar,
+  NDivider, NScrollbar,
   useMessage
 } from 'naive-ui'
 import {
-  SettingsOutline, ColorPaletteOutline, LanguageOutline,
+  ColorPaletteOutline,
   SaveOutline, RefreshOutline, InformationCircleOutline,
-  FolderOutline, ServerOutline, ShieldCheckmarkOutline
+  ServerOutline, ShieldCheckmarkOutline
 } from '@vicons/ionicons5'
-import { appConfig, loadConfig, saveConfig } from '@/stores/config'
+import { loadConfig } from '@/stores/config'
+import {
+  themeSetting, fontSize, language,
+  autoSave, saveInterval, maxBufferSize,
+  persistSettings
+} from '@/stores/settings'
+import { t } from '@/stores/i18n'
 
 const message = useMessage()
 
-// 设置项
-const theme = ref('light')
-const language = ref('zh-CN')
-const autoSave = ref(true)
-const saveInterval = ref(60)
-const maxBufferSize = ref(10000)
-const fontSize = ref(14)
-
-// 主题选项
-const themeOptions = [
-  { label: '浅色主题', value: 'light' },
-  { label: '深色主题', value: 'dark' },
-  { label: '跟随系统', value: 'auto' },
-]
+// 选项
+const themeOptions = computed(() => [
+  { label: t('settings.themeLight'), value: 'light' },
+  { label: t('settings.themeDark'), value: 'dark' },
+  { label: t('settings.themeAuto'), value: 'auto' },
+])
 
 const languageOptions = [
   { label: '简体中文', value: 'zh-CN' },
   { label: 'English', value: 'en-US' },
 ]
 
-const fontSizeOptions = [
-  { label: '小 (12px)', value: 12 },
-  { label: '中 (14px)', value: 14 },
-  { label: '大 (16px)', value: 16 },
-  { label: '特大 (18px)', value: 18 },
-]
+const fontSizeOptions = computed(() => [
+  { label: t('settings.fontSmall'), value: 12 },
+  { label: t('settings.fontMedium'), value: 14 },
+  { label: t('settings.fontLarge'), value: 16 },
+  { label: t('settings.fontXLarge'), value: 18 },
+])
 
 const handleSave = async () => {
   try {
-    if (appConfig.value) {
-      appConfig.value.ui.theme = theme.value
-      appConfig.value.ui.language = language.value
-      appConfig.value.ui.font_size = fontSize.value
-      appConfig.value.data.auto_save = autoSave.value
-      appConfig.value.data.save_interval = saveInterval.value
-      appConfig.value.data.max_buffer_size = maxBufferSize.value
-      await saveConfig()
-    }
-    message.success('设置已保存')
+    await persistSettings()
+    message.success(t('settings.saved'))
   } catch (e) {
-    message.error(`保存失败: ${e}`)
+    message.error(t('settings.saveFail', String(e)))
   }
 }
 
 const handleReset = () => {
-  theme.value = 'light'
+  themeSetting.value = 'light'
   language.value = 'zh-CN'
+  fontSize.value = 14
   autoSave.value = true
   saveInterval.value = 60
   maxBufferSize.value = 10000
-  fontSize.value = 14
-  message.info('已恢复默认设置')
+  message.info(t('settings.resetDone'))
 }
 
 onMounted(async () => {
   await loadConfig()
-  if (appConfig.value) {
-    theme.value = appConfig.value.ui.theme
-    language.value = appConfig.value.ui.language
-    fontSize.value = appConfig.value.ui.font_size
-    autoSave.value = appConfig.value.data.auto_save
-    saveInterval.value = appConfig.value.data.save_interval
-    maxBufferSize.value = appConfig.value.data.max_buffer_size
-  }
 })
 </script>
 
@@ -87,25 +69,25 @@ onMounted(async () => {
       <div class="settings-content">
         <!-- 页面标题 -->
         <div class="page-header">
-          <h1>设置</h1>
-          <p>应用配置与偏好设置</p>
+          <h1>{{ t('settings.title') }}</h1>
+          <p>{{ t('settings.subtitle') }}</p>
         </div>
 
         <!-- 外观设置 -->
         <section class="settings-section">
           <div class="section-header">
             <NIcon :component="ColorPaletteOutline" size="20" />
-            <span>外观</span>
+            <span>{{ t('settings.appearance') }}</span>
           </div>
 
           <div class="settings-card">
             <div class="setting-item">
               <div class="setting-info">
-                <label>主题</label>
-                <p>选择应用的显示主题</p>
+                <label>{{ t('settings.theme') }}</label>
+                <p>{{ t('settings.themeDesc') }}</p>
               </div>
               <NSelect
-                v-model:value="theme"
+                v-model:value="themeSetting"
                 :options="themeOptions"
                 style="width: 150px"
               />
@@ -115,8 +97,8 @@ onMounted(async () => {
 
             <div class="setting-item">
               <div class="setting-info">
-                <label>语言</label>
-                <p>选择界面显示语言</p>
+                <label>{{ t('settings.language') }}</label>
+                <p>{{ t('settings.languageDesc') }}</p>
               </div>
               <NSelect
                 v-model:value="language"
@@ -129,8 +111,8 @@ onMounted(async () => {
 
             <div class="setting-item">
               <div class="setting-info">
-                <label>字体大小</label>
-                <p>调整界面字体大小</p>
+                <label>{{ t('settings.fontSize') }}</label>
+                <p>{{ t('settings.fontSizeDesc') }}</p>
               </div>
               <NSelect
                 v-model:value="fontSize"
@@ -145,14 +127,14 @@ onMounted(async () => {
         <section class="settings-section">
           <div class="section-header">
             <NIcon :component="ServerOutline" size="20" />
-            <span>数据</span>
+            <span>{{ t('settings.data') }}</span>
           </div>
 
           <div class="settings-card">
             <div class="setting-item">
               <div class="setting-info">
-                <label>自动保存</label>
-                <p>定时自动保存接收的数据</p>
+                <label>{{ t('settings.autoSave') }}</label>
+                <p>{{ t('settings.autoSaveDesc') }}</p>
               </div>
               <NSwitch v-model:value="autoSave" />
             </div>
@@ -161,8 +143,8 @@ onMounted(async () => {
 
             <div class="setting-item">
               <div class="setting-info">
-                <label>保存间隔</label>
-                <p>自动保存的时间间隔（秒）</p>
+                <label>{{ t('settings.saveInterval') }}</label>
+                <p>{{ t('settings.saveIntervalDesc') }}</p>
               </div>
               <NInputNumber
                 v-model:value="saveInterval"
@@ -177,8 +159,8 @@ onMounted(async () => {
 
             <div class="setting-item">
               <div class="setting-info">
-                <label>缓冲区大小</label>
-                <p>最大数据缓冲条数</p>
+                <label>{{ t('settings.bufferSize') }}</label>
+                <p>{{ t('settings.bufferSizeDesc') }}</p>
               </div>
               <NInputNumber
                 v-model:value="maxBufferSize"
@@ -195,7 +177,7 @@ onMounted(async () => {
         <section class="settings-section">
           <div class="section-header">
             <NIcon :component="InformationCircleOutline" size="20" />
-            <span>关于</span>
+            <span>{{ t('settings.about') }}</span>
           </div>
 
           <div class="settings-card about-card">
@@ -206,21 +188,21 @@ onMounted(async () => {
               <div class="app-details">
                 <h3>KonSerial</h3>
                 <p class="version">v0.1.0</p>
-                <p class="desc">现代化轻量级串口调试工具</p>
+                <p class="desc">{{ t('settings.appDesc') }}</p>
               </div>
             </div>
             <NDivider />
             <div class="info-grid">
               <div class="info-item">
-                <span class="info-label">技术栈</span>
+                <span class="info-label">{{ t('settings.techStack') }}</span>
                 <span class="info-value">Tauri + Vue 3 + Rust</span>
               </div>
               <div class="info-item">
-                <span class="info-label">UI 框架</span>
+                <span class="info-label">{{ t('settings.uiFramework') }}</span>
                 <span class="info-value">Naive UI</span>
               </div>
               <div class="info-item">
-                <span class="info-label">许可证</span>
+                <span class="info-label">{{ t('settings.license') }}</span>
                 <span class="info-value">MIT License</span>
               </div>
             </div>
@@ -232,11 +214,11 @@ onMounted(async () => {
           <NSpace>
             <NButton @click="handleReset">
               <template #icon><NIcon :component="RefreshOutline" /></template>
-              恢复默认
+              {{ t('settings.reset') }}
             </NButton>
             <NButton type="primary" @click="handleSave">
               <template #icon><NIcon :component="SaveOutline" /></template>
-              保存设置
+              {{ t('settings.save') }}
             </NButton>
           </NSpace>
         </div>
@@ -248,7 +230,7 @@ onMounted(async () => {
 <style scoped>
 .settings-page {
   height: 100%;
-  background: #f5f7fa;
+  background: var(--bg-page);
 }
 
 .settings-content {
@@ -262,15 +244,15 @@ onMounted(async () => {
 }
 
 .page-header h1 {
-  font-size: 28px;
+  font-size: var(--font-3xl);
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--text-primary);
   margin: 0;
 }
 
 .page-header p {
-  font-size: 14px;
-  color: #888;
+  font-size: var(--font-base);
+  color: var(--text-muted);
   margin-top: 4px;
 }
 
@@ -282,18 +264,18 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 15px;
+  font-size: var(--font-lg);
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
   margin-bottom: 12px;
   padding-left: 4px;
 }
 
 .settings-card {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 12px;
   padding: 4px 0;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-card);
 }
 
 .setting-item {
@@ -309,14 +291,14 @@ onMounted(async () => {
 
 .setting-info label {
   display: block;
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 500;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .setting-info p {
-  font-size: 12px;
-  color: #888;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
   margin-top: 2px;
 }
 
@@ -347,21 +329,21 @@ onMounted(async () => {
 }
 
 .app-details h3 {
-  font-size: 20px;
+  font-size: var(--font-2xl);
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
   margin: 0;
 }
 
 .app-details .version {
-  font-size: 13px;
-  color: #666;
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
   margin-top: 2px;
 }
 
 .app-details .desc {
-  font-size: 13px;
-  color: #999;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
   margin-top: 4px;
 }
 
@@ -375,21 +357,21 @@ onMounted(async () => {
 .info-item {
   text-align: center;
   padding: 12px;
-  background: #f8f9fa;
+  background: var(--bg-page);
   border-radius: 8px;
 }
 
 .info-label {
   display: block;
-  font-size: 11px;
-  color: #999;
+  font-size: var(--font-2xs);
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 
 .info-value {
-  font-size: 13px;
+  font-size: var(--font-sm);
   font-weight: 500;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .actions {

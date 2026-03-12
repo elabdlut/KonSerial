@@ -26,6 +26,8 @@ import {
   stopStatusPolling,
   type SerialPortConfig,
 } from '@/stores/serial'
+import { maxBufferSize } from '@/stores/settings'
+import { t } from '@/stores/i18n'
 
 const message = useMessage()
 
@@ -69,12 +71,27 @@ const connectionStats = computed(() => {
   }
 })
 
-const portOptions = computed(() => 
+const portSelectOpen = ref(false)
+const frozenPortOptions = ref<{ label: string; value: string }[]>([])
+
+const livePortOptions = computed(() => 
   availablePorts.value.map(p => ({ 
     label: getPortDisplayName(p), 
     value: p.port_name 
   }))
 )
+
+// 下拉框打开时冻结选项，避免轮询刷新导致列表跳动
+const portOptions = computed(() =>
+  portSelectOpen.value ? frozenPortOptions.value : livePortOptions.value
+)
+
+function onPortSelectShow(show: boolean) {
+  if (show) {
+    frozenPortOptions.value = livePortOptions.value
+  }
+  portSelectOpen.value = show
+}
 
 const baudRateOptions = [
   { label: '9600', value: 9600 },
@@ -87,34 +104,34 @@ const baudRateOptions = [
   { label: '921600', value: 921600 },
 ]
 
-const dataBitsOptions = [
-  { label: '5 位', value: 5 },
-  { label: '6 位', value: 6 },
-  { label: '7 位', value: 7 },
-  { label: '8 位', value: 8 },
-]
+const dataBitsOptions = computed(() => [
+  { label: t('serial.bits5'), value: 5 },
+  { label: t('serial.bits6'), value: 6 },
+  { label: t('serial.bits7'), value: 7 },
+  { label: t('serial.bits8'), value: 8 },
+])
 
-const stopBitsOptions = [
-  { label: '1 位', value: 1 },
-  { label: '2 位', value: 2 },
-]
+const stopBitsOptions = computed(() => [
+  { label: t('serial.stop1'), value: 1 },
+  { label: t('serial.stop2'), value: 2 },
+])
 
-const parityOptions = [
-  { label: '无校验', value: 'None' },
-  { label: '奇校验', value: 'Odd' },
-  { label: '偶校验', value: 'Even' },
-]
+const parityOptions = computed(() => [
+  { label: t('serial.parityNone'), value: 'None' },
+  { label: t('serial.parityOdd'), value: 'Odd' },
+  { label: t('serial.parityEven'), value: 'Even' },
+])
 
 const encodingOptions = [
   { label: 'UTF-8', value: 'utf-8' },
   { label: 'GBK', value: 'gbk' },
 ]
 
-const newlineOptions = [
-  { label: '无', value: 'none' },
+const newlineOptions = computed(() => [
+  { label: t('serial.newlineNone'), value: 'none' },
   { label: 'LF (\\n)', value: '\n' },
   { label: 'CRLF (\\r\\n)', value: '\r\n' },
-]
+])
 
 const formatHex = (bytes: number[]) => {
   return bytes.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ')
@@ -128,9 +145,9 @@ const refreshPorts = async () => {
     if (availablePorts.value.length > 0 && !portName.value) {
       portName.value = availablePorts.value[0].port_name
     }
-    message.success(`发现 ${availablePorts.value.length} 个串口`)
+    message.success(t('serial.foundPorts', availablePorts.value.length))
   } catch (e) {
-    message.error(`刷新失败: ${e}`)
+    message.error(t('serial.refreshFail', String(e)))
   } finally {
     loading.value = false
   }
@@ -142,11 +159,11 @@ const toggleConnection = async () => {
   try {
     if (isConnected.value && currentConnectionId.value) {
       await closeSerialPort(currentConnectionId.value)
-      addLog('system', '连接已断开')
-      message.info('串口已断开')
+      addLog('system', t('serial.disconnectedMsg'))
+      message.info(t('serial.portDisconnected'))
     } else {
       if (!portName.value) {
-        message.warning('请先选择串口')
+        message.warning(t('serial.selectFirst'))
         return
       }
       const config: SerialPortConfig = {
@@ -160,12 +177,12 @@ const toggleConnection = async () => {
       }
       const connId = generateConnectionId()
       await openSerialPort(connId, config)
-      addLog('system', `已连接 ${portName.value} (${baudRate.value} bps, ${dataBits.value}-${parity.value[0]}-${stopBits.value})`)
-      message.success('串口连接成功')
+      addLog('system', t('serial.connectedLog', portName.value, baudRate.value, dataBits.value, parity.value[0], stopBits.value))
+      message.success(t('serial.connectedMsg'))
     }
   } catch (e) {
     addLog('error', `${e}`)
-    message.error(`操作失败: ${e}`)
+    message.error(t('serial.operationFail', String(e)))
   } finally {
     loading.value = false
   }
@@ -183,7 +200,7 @@ const handleSend = async () => {
     addLog('tx', sendText.value)
     sendText.value = ''
   } catch (e) {
-    message.error(`发送失败: ${e}`)
+    message.error(t('serial.sendFail', String(e)))
   }
 }
 
@@ -191,6 +208,12 @@ const addLog = (type: string, content: string, rawBytes?: number[]) => {
   const now = new Date()
   const time = now.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
   receivedData.value.push({ type, content, time, rawBytes })
+  
+  // 超过缓冲区上限时裁剪旧条目
+  const max = maxBufferSize.value
+  if (receivedData.value.length > max) {
+    receivedData.value = receivedData.value.slice(-max)
+  }
   
   // 如果是接收的数据，同步到全局缓存供波形图使用
   if (type === 'rx' && currentConnectionId.value) {
@@ -238,7 +261,7 @@ onUnmounted(() => {
       <div class="status-section">
         <div class="status-indicator" :class="{ connected: isConnected }">
           <div class="status-dot"></div>
-          <span class="status-text">{{ isConnected ? '已连接' : '未连接' }}</span>
+          <span class="status-text">{{ isConnected ? t('serial.connected') : t('serial.disconnected') }}</span>
         </div>
         <div v-if="isConnected && currentConnection" class="connection-info">
           <span>{{ currentConnection.config.port_name }}</span>
@@ -252,19 +275,21 @@ onUnmounted(() => {
       <div class="config-section">
         <div class="section-title">
           <NIcon :component="SettingsOutline" size="16" />
-          <span>串口配置</span>
+          <span>{{ t('serial.config') }}</span>
         </div>
 
         <div class="config-item">
-          <label>串口</label>
+          <label>{{ t('serial.port') }}</label>
           <NInputGroup>
             <NSelect
               v-model:value="portName"
               :options="portOptions"
               :disabled="isConnected"
-              placeholder="选择..."
+              :virtual-scroll="false"
+              :placeholder="t('serial.selectPort')"
               size="small"
               style="flex: 1"
+              @update:show="onPortSelectShow"
             />
             <NTooltip>
               <template #trigger>
@@ -279,13 +304,13 @@ onUnmounted(() => {
                   </template>
                 </NButton>
               </template>
-              刷新串口
+              {{ t('serial.refreshPorts') }}
             </NTooltip>
           </NInputGroup>
         </div>
 
         <div class="config-item">
-          <label>波特率</label>
+          <label>{{ t('serial.baudRate') }}</label>
           <NSelect
             v-model:value="baudRate"
             :options="baudRateOptions"
@@ -296,7 +321,7 @@ onUnmounted(() => {
 
         <div class="config-row">
           <div class="config-item half">
-            <label>数据位</label>
+            <label>{{ t('serial.dataBits') }}</label>
             <NSelect
               v-model:value="dataBits"
               :options="dataBitsOptions"
@@ -305,7 +330,7 @@ onUnmounted(() => {
             />
           </div>
           <div class="config-item half">
-            <label>停止位</label>
+            <label>{{ t('serial.stopBits') }}</label>
             <NSelect
               v-model:value="stopBits"
               :options="stopBitsOptions"
@@ -316,7 +341,7 @@ onUnmounted(() => {
         </div>
 
         <div class="config-item">
-          <label>校验</label>
+          <label>{{ t('serial.parity') }}</label>
           <NSelect
             v-model:value="parity"
             :options="parityOptions"
@@ -339,7 +364,7 @@ onUnmounted(() => {
         <template #icon>
           <NIcon :component="isConnected ? CloseOutline : FlashOutline" />
         </template>
-        {{ isConnected ? '断开连接' : '打开连接' }}
+        {{ isConnected ? t('serial.disconnect') : t('serial.connect') }}
       </NButton>
 
       <!-- 统计 -->
@@ -347,7 +372,7 @@ onUnmounted(() => {
         <NDivider style="margin: 20px 0 16px" />
         <div class="section-title">
           <NIcon :component="PulseOutline" size="16" />
-          <span>数据统计</span>
+          <span>{{ t('serial.statistics') }}</span>
         </div>
         <div class="stats-grid">
           <div class="stat-item">
@@ -369,7 +394,7 @@ onUnmounted(() => {
         <div class="terminal-header">
           <div class="terminal-title">
             <NIcon :component="SwapHorizontalOutline" size="18" />
-            <span>数据终端</span>
+            <span>{{ t('serial.terminal') }}</span>
             <NTag size="small" :bordered="false" type="info">{{ receivedData.length }}</NTag>
           </div>
           <NSpace align="center" :size="8">
@@ -381,15 +406,15 @@ onUnmounted(() => {
             />
             <NSwitch v-model:value="hexDisplay" size="small">
               <template #checked>HEX</template>
-              <template #unchecked>文本</template>
+              <template #unchecked>{{ t('serial.text') }}</template>
             </NSwitch>
             <NSwitch v-model:value="autoScroll" size="small">
-              <template #checked>滚动</template>
-              <template #unchecked>滚动</template>
+              <template #checked>{{ t('serial.scroll') }}</template>
+              <template #unchecked>{{ t('serial.scroll') }}</template>
             </NSwitch>
             <NButton size="small" quaternary @click="clearLog">
               <template #icon><NIcon :component="TrashOutline" /></template>
-              清空
+              {{ t('serial.clear') }}
             </NButton>
           </NSpace>
         </div>
@@ -412,7 +437,7 @@ onUnmounted(() => {
             </div>
             <div v-if="receivedData.length === 0" class="terminal-empty">
               <NIcon :component="SwapHorizontalOutline" size="40" />
-              <p>连接串口后开始通信</p>
+              <p>{{ t('serial.emptyHint') }}</p>
             </div>
           </div>
         </NScrollbar>
@@ -423,8 +448,8 @@ onUnmounted(() => {
         <div class="send-options">
           <NSpace align="center" :size="12">
             <NSwitch v-model:value="hexSend" size="small">
-              <template #checked>HEX发送</template>
-              <template #unchecked>文本发送</template>
+              <template #checked>{{ t('serial.hexSend') }}</template>
+              <template #unchecked>{{ t('serial.textSend') }}</template>
             </NSwitch>
             <NSelect
               v-if="!hexSend"
@@ -439,7 +464,7 @@ onUnmounted(() => {
           <NInput
             v-model:value="sendText"
             :disabled="!isConnected"
-            :placeholder="hexSend ? '输入十六进制数据，如: 01 02 03 FF' : '输入要发送的文本...'"
+            :placeholder="hexSend ? t('serial.hexPlaceholder') : t('serial.textPlaceholder')"
             @keydown.enter="handleSend"
             clearable
           />
@@ -449,7 +474,7 @@ onUnmounted(() => {
             @click="handleSend"
           >
             <template #icon><NIcon :component="SendOutline" /></template>
-            发送
+            {{ t('serial.send') }}
           </NButton>
         </div>
       </div>
@@ -461,7 +486,7 @@ onUnmounted(() => {
 .serial-page {
   display: flex;
   height: 100%;
-  background: #f5f7fa;
+  background: var(--bg-page);
   gap: 16px;
   padding: 16px;
 }
@@ -470,10 +495,10 @@ onUnmounted(() => {
 .config-panel {
   width: 280px;
   flex-shrink: 0;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
 }
@@ -487,7 +512,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  background: #f5f5f5;
+  background: var(--bg-page);
   border-radius: 20px;
   transition: all 0.3s;
 }
@@ -514,9 +539,9 @@ onUnmounted(() => {
 }
 
 .status-text {
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 500;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .status-indicator.connected .status-text {
@@ -525,15 +550,15 @@ onUnmounted(() => {
 
 .connection-info {
   margin-top: 12px;
-  font-size: 13px;
-  color: #666;
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
   display: flex;
   justify-content: center;
   gap: 8px;
 }
 
 .connection-info .baud {
-  color: #999;
+  color: var(--text-muted);
 }
 
 /* 配置区 */
@@ -545,9 +570,9 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--font-sm);
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
   margin-bottom: 16px;
 }
 
@@ -557,8 +582,8 @@ onUnmounted(() => {
 
 .config-item label {
   display: block;
-  font-size: 12px;
-  color: #666;
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 
@@ -583,7 +608,7 @@ onUnmounted(() => {
 
 .stat-item {
   flex: 1;
-  background: #f8f9fa;
+  background: var(--bg-page);
   border-radius: 8px;
   padding: 12px;
   text-align: center;
@@ -591,13 +616,13 @@ onUnmounted(() => {
 
 .stat-label {
   display: block;
-  font-size: 11px;
-  color: #999;
+  font-size: var(--font-2xs);
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 
 .stat-value {
-  font-size: 18px;
+  font-size: var(--font-xl);
   font-weight: 600;
   font-family: 'SF Mono', Monaco, monospace;
 }
@@ -617,7 +642,7 @@ onUnmounted(() => {
 /* 终端区域 */
 .terminal-section {
   flex: 1;
-  background: #1e1e1e;
+  background: var(--bg-terminal);
   border-radius: 12px;
   display: flex;
   flex-direction: column;
@@ -639,7 +664,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   color: #ccc;
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 500;
 }
 
@@ -658,7 +683,7 @@ onUnmounted(() => {
   gap: 12px;
   padding: 4px 0;
   font-family: 'SF Mono', Monaco, Consolas, monospace;
-  font-size: 13px;
+  font-size: var(--app-font-size, 13px);
   line-height: 1.5;
 }
 
@@ -694,15 +719,15 @@ onUnmounted(() => {
 }
 
 .terminal-empty p {
-  font-size: 14px;
+  font-size: var(--font-base);
 }
 
 /* 发送区域 */
 .send-section {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 12px;
   padding: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-card);
 }
 
 .send-options {

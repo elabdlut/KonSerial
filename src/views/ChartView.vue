@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import {
   NButton, NSpace, NIcon, NSwitch, NSlider, NInputNumber,
-  NTooltip, NDivider, NTag, NScrollbar, NCheckbox, NCheckboxGroup,
+  NTooltip, NDivider, NTag, NCheckbox, NCheckboxGroup,
   useMessage
 } from 'naive-ui'
 import {
@@ -11,6 +11,7 @@ import {
   CameraOutline
 } from '@vicons/ionicons5'
 import { receivedBuffer } from '@/stores/serial'
+import { t } from '@/stores/i18n'
 
 const message = useMessage()
 
@@ -119,14 +120,14 @@ const toggleRunning = () => {
     // 开始定时处理数据
     lastProcessedIndex = receivedBuffer.value.length // 从当前位置开始
     processingInterval = window.setInterval(processNewData, 50) // 50ms更新一次
-    message.success('开始采集数据')
+    message.success(t('chart.startedMsg'))
   } else {
     // 停止定时处理
     if (processingInterval !== null) {
       clearInterval(processingInterval)
       processingInterval = null
     }
-    message.info('已暂停采集')
+    message.info(t('chart.pausedMsg'))
   }
 }
 
@@ -135,13 +136,13 @@ const clearChart = () => {
   discoveredChannels.value = []
   selectedChannels.value = []
   lastProcessedIndex = 0
-  message.success('图表已清空')
+  message.success(t('chart.cleared'))
 }
 
 // 导出数据为 CSV
 const exportData = () => {
   if (totalDataPoints.value === 0) {
-    message.warning('没有数据可导出')
+    message.warning(t('chart.noExportData'))
     return
   }
   
@@ -172,14 +173,14 @@ const exportData = () => {
   a.download = `chart_data_${Date.now()}.csv`
   a.click()
   URL.revokeObjectURL(url)
-  message.success('数据已导出')
+  message.success(t('chart.exported'))
 }
 
 // 导出图表为 PNG
 const exportChart = async () => {
   const chartEl = chartRef.value
   if (!chartEl) {
-    message.warning('图表区域未找到')
+    message.warning(t('chart.areaNotFound'))
     return
   }
   
@@ -193,9 +194,9 @@ const exportChart = async () => {
     link.download = `chart_${Date.now()}.png`
     link.href = canvas.toDataURL('image/png')
     link.click()
-    message.success('图表已保存为 PNG')
+    message.success(t('chart.savedPng'))
   } catch (err: unknown) {
-    message.error('导出失败: ' + String(err))
+    message.error(t('chart.exportFail', String(err)))
   }
 }
 
@@ -215,10 +216,10 @@ onUnmounted(() => {
       <div class="status-section">
         <div class="status-indicator" :class="{ running: isRunning }">
           <div class="status-dot"></div>
-          <span class="status-text">{{ isRunning ? '采集中' : '已停止' }}</span>
+          <span class="status-text">{{ isRunning ? t('chart.running') : t('chart.stopped') }}</span>
         </div>
         <div class="data-count">
-          <span>{{ totalDataPoints }} 个数据点</span>
+          <span>{{ totalDataPoints }} {{ t('chart.dataPoints') }}</span>
         </div>
       </div>
 
@@ -228,17 +229,17 @@ onUnmounted(() => {
       <div class="format-hint">
         <div class="hint-header" @click="showFormatHelp = !showFormatHelp">
           <NIcon :component="HelpCircleOutline" size="14" />
-          <span>数据格式说明</span>
-          <span class="toggle">{{ showFormatHelp ? '收起' : '展开' }}</span>
+          <span>{{ t('chart.formatHelp') }}</span>
+          <span class="toggle">{{ showFormatHelp ? t('chart.collapse') : t('chart.expand') }}</span>
         </div>
         <div v-show="showFormatHelp" class="hint-content">
-          <p>串口发送格式：</p>
+          <p>{{ t('chart.formatDesc') }}</p>
           <code>name:value</code>
-          <p class="examples">示例：</p>
+          <p class="examples">{{ t('chart.examples') }}</p>
           <code>temp:25.5</code>
           <code>voltage:3.3</code>
           <code>sensor:128</code>
-          <p class="note">每个通道每次采样发送一个数据点，支持多通道同时显示</p>
+          <p class="note">{{ t('chart.formatNote') }}</p>
         </div>
       </div>
 
@@ -248,12 +249,12 @@ onUnmounted(() => {
       <div class="config-section">
         <div class="section-title">
           <NIcon :component="AnalyticsOutline" size="16" />
-          <span>数据通道</span>
+          <span>{{ t('chart.channels') }}</span>
           <NTag size="small" :bordered="false">{{ discoveredChannels.length }}</NTag>
         </div>
 
         <div v-if="discoveredChannels.length === 0" class="empty-channels">
-          暂无数据通道
+          {{ t('chart.noChannels') }}
         </div>
         <div v-else class="channel-list">
           <NCheckboxGroup v-model:value="selectedChannels">
@@ -265,7 +266,7 @@ onUnmounted(() => {
         </div>
 
         <div class="config-item" style="margin-top: 12px">
-          <label>时间范围 (秒)</label>
+          <label>{{ t('chart.timeRange') }}</label>
           <NSlider v-model:value="timeRange" :min="5" :max="120" :step="5" />
           <div class="slider-value">{{ timeRange }}s</div>
         </div>
@@ -277,32 +278,32 @@ onUnmounted(() => {
       <div class="config-section">
         <div class="section-title">
           <NIcon :component="SettingsOutline" size="16" />
-          <span>显示设置</span>
+          <span>{{ t('chart.display') }}</span>
         </div>
 
         <div class="config-item row">
-          <label>自动缩放</label>
+          <label>{{ t('chart.autoScale') }}</label>
           <NSwitch v-model:value="autoScale" size="small" />
         </div>
 
         <div v-if="!autoScale" class="config-row">
           <div class="config-item half">
-            <label>Y 最小</label>
+            <label>{{ t('chart.yMin') }}</label>
             <NInputNumber v-model:value="yMin" size="small" :show-button="false" />
           </div>
           <div class="config-item half">
-            <label>Y 最大</label>
+            <label>{{ t('chart.yMax') }}</label>
             <NInputNumber v-model:value="yMax" size="small" :show-button="false" />
           </div>
         </div>
 
         <div class="config-item row">
-          <label>显示网格</label>
+          <label>{{ t('chart.showGrid') }}</label>
           <NSwitch v-model:value="gridEnabled" size="small" />
         </div>
 
         <div class="config-item">
-          <label>线条粗细</label>
+          <label>{{ t('chart.lineWidth') }}</label>
           <NSlider v-model:value="lineWidth" :min="1" :max="5" :step="0.5" />
         </div>
       </div>
@@ -318,17 +319,17 @@ onUnmounted(() => {
           <template #icon>
             <NIcon :component="isRunning ? PauseOutline : PlayOutline" />
           </template>
-          {{ isRunning ? '暂停' : '开始' }}
+          {{ isRunning ? t('chart.pause') : t('chart.start') }}
         </NButton>
 
         <NSpace style="margin-top: 12px">
           <NButton @click="clearChart" size="small">
             <template #icon><NIcon :component="TrashOutline" /></template>
-            清空
+            {{ t('chart.clear') }}
           </NButton>
           <NButton @click="exportData" size="small">
             <template #icon><NIcon :component="DownloadOutline" /></template>
-            导出
+            {{ t('chart.export') }}
           </NButton>
         </NSpace>
       </div>
@@ -337,10 +338,10 @@ onUnmounted(() => {
       <div class="stats-section">
         <NDivider style="margin: 20px 0 16px" />
         <div class="section-title">
-          <span>通道统计</span>
+          <span>{{ t('chart.channelStats') }}</span>
         </div>
         <div v-if="selectedChannels.length === 0" class="empty-stats">
-          请选择要显示的通道
+          {{ t('chart.selectChannels') }}
         </div>
         <div v-else class="channel-stats">
           <div v-for="ch in selectedChannels" :key="ch" class="channel-stat-card">
@@ -350,11 +351,11 @@ onUnmounted(() => {
             </div>
             <div class="stats-mini-grid">
               <div class="stat-mini">
-                <span class="label">当前</span>
+                <span class="label">{{ t('chart.current') }}</span>
                 <span class="value">{{ getChannelStats(ch).current }}</span>
               </div>
               <div class="stat-mini">
-                <span class="label">均值</span>
+                <span class="label">{{ t('chart.average') }}</span>
                 <span class="value">{{ getChannelStats(ch).avg }}</span>
               </div>
             </div>
@@ -369,8 +370,8 @@ onUnmounted(() => {
         <div class="chart-header">
           <div class="chart-title">
             <NIcon :component="AnalyticsOutline" size="18" />
-            <span>实时波形图</span>
-            <NTag v-if="isRunning" size="small" type="success">实时</NTag>
+            <span>{{ t('chart.realtime') }}</span>
+            <NTag v-if="isRunning" size="small" type="success">{{ t('chart.live') }}</NTag>
           </div>
           <NSpace>
             <NTooltip>
@@ -379,7 +380,7 @@ onUnmounted(() => {
                   <template #icon><NIcon :component="CameraOutline" /></template>
                 </NButton>
               </template>
-              保存为图片
+              {{ t('chart.saveImage') }}
             </NTooltip>
             <NTooltip>
               <template #trigger>
@@ -387,7 +388,7 @@ onUnmounted(() => {
                   <template #icon><NIcon :component="ExpandOutline" /></template>
                 </NButton>
               </template>
-              全屏显示
+              {{ t('chart.fullscreen') }}
             </NTooltip>
           </NSpace>
         </div>
@@ -395,10 +396,10 @@ onUnmounted(() => {
         <div class="chart-body">
           <div v-if="totalDataPoints === 0" class="chart-empty">
             <NIcon :component="AnalyticsOutline" size="48" />
-            <p>暂无数据</p>
-            <p class="sub">点击“开始”按钮开始采集数据</p>
+            <p>{{ t('chart.noData') }}</p>
+            <p class="sub">{{ t('chart.startHint') }}</p>
             <div class="format-example">
-              <p>数据格式: <code>name:value</code></p>
+              <p>{{ t('chart.dataFormat') }} <code>name:value</code></p>
             </div>
           </div>
           <div v-else class="chart-placeholder">
@@ -426,7 +427,7 @@ onUnmounted(() => {
 .chart-page {
   display: flex;
   height: 100%;
-  background: #f5f7fa;
+  background: var(--bg-page);
   gap: 16px;
   padding: 16px;
 }
@@ -435,10 +436,10 @@ onUnmounted(() => {
 .config-panel {
   width: 280px;
   flex-shrink: 0;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -480,9 +481,9 @@ onUnmounted(() => {
 }
 
 .status-text {
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 500;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .status-indicator.running .status-text {
@@ -491,8 +492,8 @@ onUnmounted(() => {
 
 .data-count {
   margin-top: 8px;
-  font-size: 12px;
-  color: #999;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
 }
 
 .config-section {
@@ -503,9 +504,9 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--font-sm);
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 
@@ -521,8 +522,8 @@ onUnmounted(() => {
 
 .config-item label {
   display: block;
-  font-size: 12px;
-  color: #666;
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 
@@ -541,8 +542,8 @@ onUnmounted(() => {
 
 .slider-value {
   text-align: right;
-  font-size: 12px;
-  color: #666;
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
   margin-top: 4px;
 }
 
@@ -561,7 +562,7 @@ onUnmounted(() => {
 }
 
 .stat-item {
-  background: #f8f9fa;
+  background: var(--bg-page);
   border-radius: 8px;
   padding: 10px;
   text-align: center;
@@ -569,13 +570,13 @@ onUnmounted(() => {
 
 .stat-label {
   display: block;
-  font-size: 11px;
-  color: #999;
+  font-size: var(--font-2xs);
+  color: var(--text-muted);
   margin-bottom: 2px;
 }
 
 .stat-value {
-  font-size: 16px;
+  font-size: var(--font-lg);
   font-weight: 600;
   font-family: 'SF Mono', Monaco, monospace;
 }
@@ -593,9 +594,9 @@ onUnmounted(() => {
 
 .chart-container {
   height: 100%;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -606,16 +607,16 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .chart-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 500;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .chart-body {
@@ -628,16 +629,16 @@ onUnmounted(() => {
 
 .chart-empty {
   text-align: center;
-  color: #999;
+  color: var(--text-muted);
 }
 
 .chart-empty p {
   margin-top: 12px;
-  font-size: 14px;
+  font-size: var(--font-base);
 }
 
 .chart-empty .sub {
-  font-size: 12px;
+  font-size: var(--font-xs);
   color: #bbb;
   margin-top: 4px;
 }
@@ -658,8 +659,8 @@ onUnmounted(() => {
   flex-direction: column;
   justify-content: space-between;
   padding: 10px 0;
-  font-size: 11px;
-  color: #999;
+  font-size: var(--font-2xs);
+  color: var(--text-muted);
   text-align: right;
   padding-right: 8px;
 }
@@ -699,7 +700,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: var(--font-xs);
   color: #1565c0;
   cursor: pointer;
   user-select: none;
@@ -707,13 +708,13 @@ onUnmounted(() => {
 
 .hint-header .toggle {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--font-2xs);
   color: #90caf9;
 }
 
 .hint-content {
   padding: 0 12px 12px;
-  font-size: 12px;
+  font-size: var(--font-xs);
   color: #555;
 }
 
@@ -732,7 +733,7 @@ onUnmounted(() => {
   background: #e3f2fd;
   border-radius: 4px;
   color: #1565c0;
-  font-size: 11px;
+  font-size: var(--font-2xs);
 }
 
 .hint-content code {
@@ -743,7 +744,7 @@ onUnmounted(() => {
   padding: 6px 10px;
   margin: 4px 0;
   font-family: 'SF Mono', Monaco, monospace;
-  font-size: 11px;
+  font-size: var(--font-2xs);
   color: #333;
 }
 
@@ -752,7 +753,7 @@ onUnmounted(() => {
   text-align: center;
   padding: 16px;
   color: #999;
-  font-size: 12px;
+  font-size: var(--font-xs);
 }
 
 .channel-list {
@@ -778,7 +779,7 @@ onUnmounted(() => {
   text-align: center;
   padding: 16px;
   color: #999;
-  font-size: 12px;
+  font-size: var(--font-xs);
 }
 
 .channel-stats {
@@ -797,7 +798,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--font-xs);
   font-weight: 500;
   color: #333;
   margin-bottom: 8px;
@@ -820,12 +821,12 @@ onUnmounted(() => {
 
 .stat-mini .label {
   display: block;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: #999;
 }
 
 .stat-mini .value {
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 600;
   font-family: 'SF Mono', Monaco, monospace;
   color: #333;
@@ -840,7 +841,7 @@ onUnmounted(() => {
 
 .format-example p {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-xs);
   color: #666;
 }
 

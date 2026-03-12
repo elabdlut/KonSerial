@@ -1,53 +1,120 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { isDark } from '@/stores/settings'
+import { t } from '@/stores/i18n'
 
 const route = useRoute()
 
-interface MenuItem {
-  path: string
-  icon: string
-  label: string
-}
-
-const menuItems = ref<MenuItem[]>([
-  { path: '/serial', icon: '🔌', label: '串口调试' },
-  { path: '/chart', icon: '📊', label: '波形图' },
-  { path: '/script', icon: '📝', label: '脚本编辑' },
-  { path: '/settings', icon: '⚙️', label: '设置' }
+const menuItems = computed(() => [
+  { path: '/serial', icon: '🔌', label: t('nav.serial') },
+  { path: '/chart', icon: '📊', label: t('nav.chart') },
+  { path: '/script', icon: '📝', label: t('nav.script') },
+  { path: '/settings', icon: '⚙️', label: t('nav.settings') }
 ])
 </script>
 
 <template>
-  <div class="flex h-screen bg-gray-100">
-    <!-- 侧边栏 -->
-    <aside class="w-64 bg-white shadow-lg">
-      <div class="p-6 border-b">
-        <h1 class="text-2xl font-bold text-gray-800">KonSerial</h1>
-        <p class="text-sm text-gray-500 mt-1">串口调试工具</p>
+  <div class="layout" :class="{ dark: isDark }">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>KonSerial</h1>
+        <p>{{ t('app.subtitle') }}</p>
       </div>
       
-      <nav class="p-4">
+      <nav class="sidebar-nav">
         <RouterLink
           v-for="item in menuItems"
           :key="item.path"
           :to="item.path"
-          class="flex items-center px-4 py-3 mb-2 rounded-lg transition-colors"
-          :class="
-            route.path === item.path
-              ? 'bg-blue-500 text-white'
-              : 'text-gray-700 hover:bg-gray-100'
-          "
+          class="nav-item"
+          :class="{ active: route.path === item.path }"
         >
-          <span class="text-xl mr-3">{{ item.icon }}</span>
-          <span class="font-medium">{{ item.label }}</span>
+          <span class="nav-icon">{{ item.icon }}</span>
+          <span class="nav-label">{{ item.label }}</span>
         </RouterLink>
       </nav>
     </aside>
 
-    <!-- 主内容区 -->
-    <main class="flex-1 overflow-auto">
+    <main class="main-content">
       <RouterView />
     </main>
   </div>
 </template>
+
+<style scoped>
+.layout {
+  display: flex;
+  height: 100vh;
+  background: var(--bg-page);
+  transition: background 0.3s;
+}
+
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  transition: background 0.3s, border-color 0.3s;
+}
+
+.sidebar-header {
+  padding: 24px 20px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-header h1 {
+  font-size: var(--font-2xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.sidebar-header p {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.sidebar-nav {
+  padding: 12px;
+  flex: 1;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+}
+
+.nav-item:hover {
+  background: var(--border-color);
+}
+
+.nav-item.active {
+  background: #4098fc;
+  color: #fff;
+}
+
+.nav-icon {
+  font-size: var(--font-xl);
+  margin-right: 10px;
+}
+
+.nav-label {
+  font-size: var(--font-base);
+  font-weight: 500;
+}
+
+.main-content {
+  flex: 1;
+  overflow: auto;
+}
+</style>

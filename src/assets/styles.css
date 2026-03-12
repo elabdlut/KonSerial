@@ -1,5 +1,41 @@
 @import 'tailwindcss';
 
+/* CSS 变量 */
+:root {
+  --app-font-size: 14px;
+  /* 字体梯度：所有大小随 --app-font-size 等比缩放 */
+  --font-2xs: calc(var(--app-font-size) - 3px);
+  --font-xs: calc(var(--app-font-size) - 2px);
+  --font-sm: calc(var(--app-font-size) - 1px);
+  --font-base: var(--app-font-size);
+  --font-lg: calc(var(--app-font-size) + 1px);
+  --font-xl: calc(var(--app-font-size) + 4px);
+  --font-2xl: calc(var(--app-font-size) + 6px);
+  --font-3xl: calc(var(--app-font-size) + 14px);
+
+  --bg-page: #f5f7fa;
+  --bg-card: #ffffff;
+  --bg-sidebar: #ffffff;
+  --bg-terminal: #1e1e1e;
+  --text-primary: #1a1a1a;
+  --text-secondary: #666666;
+  --text-muted: #999999;
+  --border-color: #e8e8e8;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+html.dark {
+  --bg-page: #18181c;
+  --bg-card: #2a2a2e;
+  --bg-sidebar: #222226;
+  --bg-terminal: #111114;
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --text-muted: #707070;
+  --border-color: #3a3a3e;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
 /* 自定义全局样式 */
 * {
   margin: 0;
@@ -9,8 +45,12 @@
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: var(--app-font-size);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  transition: background 0.3s, color 0.3s;
 }
 
 #app {

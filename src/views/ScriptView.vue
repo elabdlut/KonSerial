@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import {
-  NButton, NSelect, NSpace, NIcon, NInput, NTooltip, NDivider, NTag,
-  NScrollbar, NTree,
+  NButton, NSpace, NIcon, NTooltip, NDivider, NTag,
+  NScrollbar,
   useMessage
 } from 'naive-ui'
 import {
@@ -10,6 +10,7 @@ import {
   StopOutline, AddOutline, TrashOutline, CodeSlashOutline,
   TimeOutline, CheckmarkCircleOutline, AlertCircleOutline
 } from '@vicons/ionicons5'
+import { t } from '@/stores/i18n'
 
 const message = useMessage()
 
@@ -58,30 +59,30 @@ const charCount = computed(() => {
 // 方法
 const runScript = () => {
   isRunning.value = true
-  addLog('info', '脚本开始执行')
-  message.success('脚本已启动')
+  addLog('info', t('script.started'))
+  message.success(t('script.startedMsg'))
 }
 
 const stopScript = () => {
   isRunning.value = false
-  addLog('info', '脚本已停止')
-  message.info('脚本已停止')
+  addLog('info', t('script.stoppedMsg'))
+  message.info(t('script.stoppedMsg'))
 }
 
 const saveScript = () => {
   isModified.value = false
-  message.success('脚本已保存')
+  message.success(t('script.savedMsg'))
 }
 
 const newScript = () => {
   scriptContent.value = '// 新脚本\n'
   currentFile.value = '未命名脚本.js'
   isModified.value = false
-  message.info('已创建新脚本')
+  message.info(t('script.newCreated'))
 }
 
 const openScript = () => {
-  message.info('打开文件功能开发中...')
+  message.info(t('script.openWip'))
 }
 
 const addLog = (type: string, content: string) => {
@@ -106,7 +107,7 @@ const onContentChange = () => {
       <div class="panel-header">
         <div class="section-title">
           <NIcon :component="FolderOpenOutline" size="16" />
-          <span>脚本文件</span>
+          <span>{{ t('script.files') }}</span>
         </div>
         <NTooltip>
           <template #trigger>
@@ -114,7 +115,7 @@ const onContentChange = () => {
               <template #icon><NIcon :component="AddOutline" /></template>
             </NButton>
           </template>
-          新建脚本
+          {{ t('script.new') }}
         </NTooltip>
       </div>
 
@@ -137,11 +138,11 @@ const onContentChange = () => {
       <!-- 脚本信息 -->
       <div class="script-info">
         <div class="info-row">
-          <span>行数</span>
+          <span>{{ t('script.lines') }}</span>
           <span>{{ lineCount }}</span>
         </div>
         <div class="info-row">
-          <span>字符</span>
+          <span>{{ t('script.chars') }}</span>
           <span>{{ charCount }}</span>
         </div>
       </div>
@@ -154,17 +155,17 @@ const onContentChange = () => {
         <div class="toolbar-left">
           <NIcon :component="CodeSlashOutline" size="18" />
           <span class="file-name">{{ currentFile }}</span>
-          <NTag v-if="isModified" size="small" type="warning">未保存</NTag>
-          <NTag v-if="isRunning" size="small" type="success">运行中</NTag>
+          <NTag v-if="isModified" size="small" type="warning">{{ t('script.unsaved') }}</NTag>
+          <NTag v-if="isRunning" size="small" type="success">{{ t('script.running') }}</NTag>
         </div>
         <NSpace>
           <NButton size="small" @click="openScript">
             <template #icon><NIcon :component="FolderOpenOutline" /></template>
-            打开
+            {{ t('script.open') }}
           </NButton>
           <NButton size="small" @click="saveScript">
             <template #icon><NIcon :component="SaveOutline" /></template>
-            保存
+            {{ t('script.save') }}
           </NButton>
           <NDivider vertical />
           <NButton 
@@ -175,7 +176,7 @@ const onContentChange = () => {
             <template #icon>
               <NIcon :component="isRunning ? StopOutline : PlayOutline" />
             </template>
-            {{ isRunning ? '停止' : '运行' }}
+            {{ isRunning ? t('script.stop') : t('script.run') }}
           </NButton>
         </NSpace>
       </div>
@@ -199,7 +200,7 @@ const onContentChange = () => {
       <div class="panel-header">
         <div class="section-title">
           <NIcon :component="TimeOutline" size="16" />
-          <span>运行日志</span>
+          <span>{{ t('script.log') }}</span>
           <NTag size="small" :bordered="false">{{ logs.length }}</NTag>
         </div>
         <NButton size="tiny" quaternary @click="clearLogs">
@@ -223,7 +224,7 @@ const onContentChange = () => {
             <span class="log-content">{{ log.content }}</span>
           </div>
           <div v-if="logs.length === 0" class="empty-log">
-            运行脚本后将在此显示日志
+            {{ t('script.emptyLog') }}
           </div>
         </div>
       </NScrollbar>
@@ -235,7 +236,7 @@ const onContentChange = () => {
 .script-page {
   display: flex;
   height: 100%;
-  background: #f5f7fa;
+  background: var(--bg-page);
   gap: 16px;
   padding: 16px;
 }
@@ -244,10 +245,10 @@ const onContentChange = () => {
 .file-panel {
   width: 200px;
   flex-shrink: 0;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 12px;
   padding: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
 }
@@ -263,9 +264,9 @@ const onContentChange = () => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--font-sm);
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .file-list {
@@ -279,13 +280,13 @@ const onContentChange = () => {
   padding: 8px 12px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
-  color: #555;
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
   transition: all 0.2s;
 }
 
 .file-item:hover {
-  background: #f5f5f5;
+  background: var(--border-color);
 }
 
 .file-item.active {
@@ -300,17 +301,17 @@ const onContentChange = () => {
 .info-row {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
-  color: #888;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
   padding: 4px 0;
 }
 
 /* 中间编辑区 */
 .editor-area {
   flex: 1;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -322,8 +323,8 @@ const onContentChange = () => {
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px;
-  border-bottom: 1px solid #eee;
-  background: #fafafa;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-page);
 }
 
 .toolbar-left {
@@ -333,9 +334,9 @@ const onContentChange = () => {
 }
 
 .file-name {
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 500;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .editor-container {
@@ -346,14 +347,14 @@ const onContentChange = () => {
 
 .line-numbers {
   width: 48px;
-  background: #f8f9fa;
+  background: var(--bg-page);
   padding: 16px 8px;
   text-align: right;
   font-family: 'SF Mono', Monaco, Consolas, monospace;
-  font-size: 13px;
+  font-size: var(--font-sm);
   line-height: 1.6;
-  color: #999;
-  border-right: 1px solid #eee;
+  color: var(--text-muted);
+  border-right: 1px solid var(--border-color);
   overflow: hidden;
   user-select: none;
 }
@@ -365,19 +366,19 @@ const onContentChange = () => {
   outline: none;
   resize: none;
   font-family: 'SF Mono', Monaco, Consolas, monospace;
-  font-size: 13px;
+  font-size: var(--font-sm);
   line-height: 1.6;
-  color: #333;
-  background: #fff;
+  color: var(--text-primary);
+  background: var(--bg-card);
 }
 
 /* 右侧输出面板 */
 .output-panel {
   width: 280px;
   flex-shrink: 0;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -385,7 +386,7 @@ const onContentChange = () => {
 
 .output-panel .panel-header {
   padding: 12px 16px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
   margin-bottom: 0;
 }
 
@@ -403,13 +404,13 @@ const onContentChange = () => {
   gap: 8px;
   padding: 8px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--font-xs);
   margin-bottom: 4px;
 }
 
 .log-item.info {
-  background: #f5f5f5;
-  color: #666;
+  background: var(--bg-page);
+  color: var(--text-secondary);
 }
 
 .log-item.error {
@@ -423,7 +424,7 @@ const onContentChange = () => {
 }
 
 .log-time {
-  color: #999;
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
@@ -433,8 +434,8 @@ const onContentChange = () => {
 
 .empty-log {
   text-align: center;
-  color: #999;
+  color: var(--text-muted);
   padding: 32px;
-  font-size: 13px;
+  font-size: var(--font-sm);
 }
 </style>
