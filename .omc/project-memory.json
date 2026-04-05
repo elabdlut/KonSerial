@@ -1,0 +1,376 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1775375572611,
+  "projectRoot": "/home/sratle/workspace/rust/KonSerial",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "vue",
+        "version": "3.5.13",
+        "category": "frontend"
+      },
+      {
+        "name": "vite",
+        "version": "6.0.3",
+        "category": "build"
+      }
+    ],
+    "packageManager": "pnpm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "pnpm build",
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": "pnpm dev",
+    "scripts": {
+      "dev": "vite",
+      "build": "vue-tsc --noEmit && vite build",
+      "preview": "vite preview",
+      "tauri": "tauri"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": "ES modules",
+    "testPattern": null,
+    "fileOrganization": "type-based"
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "public",
+      "src"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 3,
+      "lastAccessed": 1775375572597,
+      "keyFiles": [
+        "index.html",
+        "tauri.svg",
+        "vite.svg"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 2,
+      "lastAccessed": 1775375572598,
+      "keyFiles": [
+        "rust_struct_nesting_config_storage_tutorial.md",
+        "rust_utils_module_tutorial.md"
+      ]
+    },
+    "public": {
+      "path": "public",
+      "purpose": "Public files",
+      "fileCount": 2,
+      "lastAccessed": 1775375572605,
+      "keyFiles": [
+        "tauri.svg",
+        "vite.svg"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 3,
+      "lastAccessed": 1775375572607,
+      "keyFiles": [
+        "App.vue",
+        "main.ts",
+        "vite-env.d.ts"
+      ]
+    },
+    "src-tauri": {
+      "path": "src-tauri",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1775375572607,
+      "keyFiles": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "build.rs",
+        "tauri.conf.json"
+      ]
+    },
+    "dist/assets": {
+      "path": "dist/assets",
+      "purpose": "Static assets",
+      "fileCount": 16,
+      "lastAccessed": 1775375572608,
+      "keyFiles": [
+        "ChartView-1Pw0f4uZ.js",
+        "ChartView-DP3J1PLP.css",
+        "CloseOutline-B-fnZu0d.js"
+      ]
+    },
+    "src/assets": {
+      "path": "src/assets",
+      "purpose": "Static assets",
+      "fileCount": 2,
+      "lastAccessed": 1775375572609,
+      "keyFiles": [
+        "styles.css",
+        "vue.svg"
+      ]
+    },
+    "src/components": {
+      "path": "src/components",
+      "purpose": "UI components",
+      "fileCount": 2,
+      "lastAccessed": 1775375572609,
+      "keyFiles": [
+        "Layout.vue",
+        "SerialConnectionPane.vue"
+      ]
+    },
+    "src/types": {
+      "path": "src/types",
+      "purpose": "Type definitions",
+      "fileCount": 0,
+      "lastAccessed": 1775375572609,
+      "keyFiles": []
+    },
+    "src/utils": {
+      "path": "src/utils",
+      "purpose": "Utility functions",
+      "fileCount": 0,
+      "lastAccessed": 1775375572609,
+      "keyFiles": []
+    },
+    "src/views": {
+      "path": "src/views",
+      "purpose": "View templates",
+      "fileCount": 4,
+      "lastAccessed": 1775375572609,
+      "keyFiles": [
+        "ChartView.vue",
+        "ScriptView.vue",
+        "SerialView.vue"
+      ]
+    },
+    "src-tauri/src": {
+      "path": "src-tauri/src",
+      "purpose": "Source code",
+      "fileCount": 2,
+      "lastAccessed": 1775375572610,
+      "keyFiles": [
+        "lib.rs",
+        "main.rs"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/stores/serial.ts",
+      "accessCount": 10,
+      "lastAccessed": 1775376031429,
+      "type": "file"
+    },
+    {
+      "path": "src/components/SerialConnectionPane.vue",
+      "accessCount": 9,
+      "lastAccessed": 1775376127248,
+      "type": "file"
+    },
+    {
+      "path": "src/views/ChartView.vue",
+      "accessCount": 6,
+      "lastAccessed": 1775268400158,
+      "type": "file"
+    },
+    {
+      "path": "src/views/ScriptView.vue",
+      "accessCount": 4,
+      "lastAccessed": 1775267563372,
+      "type": "file"
+    },
+    {
+      "path": "src/views/SerialView.vue",
+      "accessCount": 3,
+      "lastAccessed": 1775267438807,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/serial/port_manager.rs",
+      "accessCount": 3,
+      "lastAccessed": 1775375667549,
+      "type": "file"
+    },
+    {
+      "path": "CLAUDE.md",
+      "accessCount": 2,
+      "lastAccessed": 1775266106394,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/lib.rs",
+      "accessCount": 2,
+      "lastAccessed": 1775266775965,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/serial/commands.rs",
+      "accessCount": 2,
+      "lastAccessed": 1775266775988,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/data_logger/mod.rs",
+      "accessCount": 2,
+      "lastAccessed": 1775266776025,
+      "type": "file"
+    },
+    {
+      "path": "src/stores/config.ts",
+      "accessCount": 2,
+      "lastAccessed": 1775266776627,
+      "type": "file"
+    },
+    {
+      "path": "src/views/SettingsView.vue",
+      "accessCount": 2,
+      "lastAccessed": 1775266776679,
+      "type": "file"
+    },
+    {
+      "path": "src/components/Layout.vue",
+      "accessCount": 2,
+      "lastAccessed": 1775266780808,
+      "type": "file"
+    },
+    {
+      "path": "src/router/index.ts",
+      "accessCount": 2,
+      "lastAccessed": 1775266860759,
+      "type": "file"
+    },
+    {
+      "path": "src/App.vue",
+      "accessCount": 2,
+      "lastAccessed": 1775266860861,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/utils/config.rs",
+      "accessCount": 2,
+      "lastAccessed": 1775376322026,
+      "type": "file"
+    },
+    {
+      "path": "package.json",
+      "accessCount": 1,
+      "lastAccessed": 1775266006232,
+      "type": "file"
+    },
+    {
+      "path": "vite.config.ts",
+      "accessCount": 1,
+      "lastAccessed": 1775266006288,
+      "type": "file"
+    },
+    {
+      "path": "README.md",
+      "accessCount": 1,
+      "lastAccessed": 1775266006342,
+      "type": "file"
+    },
+    {
+      "path": "tsconfig.json",
+      "accessCount": 1,
+      "lastAccessed": 1775266006395,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/Cargo.toml",
+      "accessCount": 1,
+      "lastAccessed": 1775266018926,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/main.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775266018950,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/tauri.conf.json",
+      "accessCount": 1,
+      "lastAccessed": 1775266018979,
+      "type": "file"
+    },
+    {
+      "path": "src/main.ts",
+      "accessCount": 1,
+      "lastAccessed": 1775266024485,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/serial/mod.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775266024549,
+      "type": "file"
+    },
+    {
+      "path": "QWEN.md",
+      "accessCount": 1,
+      "lastAccessed": 1775266037567,
+      "type": "file"
+    },
+    {
+      "path": "DESIGN.md",
+      "accessCount": 1,
+      "lastAccessed": 1775266038044,
+      "type": "file"
+    },
+    {
+      "path": "src/assets/styles.css",
+      "accessCount": 1,
+      "lastAccessed": 1775266051488,
+      "type": "file"
+    },
+    {
+      "path": "src/stores/settings.ts",
+      "accessCount": 1,
+      "lastAccessed": 1775266776722,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/utils/commands.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775266776831,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

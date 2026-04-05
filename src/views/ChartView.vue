@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
-  NButton, NSpace, NIcon, NSwitch, NSlider, NInputNumber,
+  NButton, NSpace, NIcon, NSwitch, NSlider, NInputNumber, NSelect,
   NTooltip, NDivider, NTag, NCheckbox, NCheckboxGroup,
   useMessage
 } from 'naive-ui'
@@ -10,7 +10,7 @@ import {
   AnalyticsOutline, DownloadOutline, HelpCircleOutline,
   CameraOutline
 } from '@vicons/ionicons5'
-import { receivedBuffer, currentConnectionId } from '@/stores/serial'
+import { receivedBuffer, currentConnectionId, activeConnections } from '@/stores/serial'
 import { t } from '@/stores/i18n'
 
 const message = useMessage()
@@ -19,6 +19,16 @@ const message = useMessage()
 const isRunning = ref(false)
 const showFormatHelp = ref(false)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+
+// 选择要监控的连接
+const chartConnectionId = ref<string | null>(currentConnectionId.value)
+
+const connectionOptions = computed(() =>
+  activeConnections.value.map(c => ({
+    label: `${c.config.port_name} (${c.status === 'Connected' ? '已连接' : '未连接'})`,
+    value: c.connection_id,
+  }))
+)
 
 // 多通道数据存储
 interface ChannelData {
@@ -129,6 +139,10 @@ const processNewData = () => {
   }
   while (lastProcessedIndex < buffer.length) {
     const item = buffer[lastProcessedIndex]
+    if (chartConnectionId.value && item.connection_id !== chartConnectionId.value) {
+      lastProcessedIndex++
+      continue
+    }
     const lines = item.content.split('\n')
     for (const line of lines) {
       if (line.trim()) {
@@ -321,7 +335,7 @@ const triggerRedraw = () => {
 
 // 开始/停止采集
 const toggleRunning = () => {
-  if (!isRunning.value && !currentConnectionId.value) {
+  if (!isRunning.value && !chartConnectionId.value) {
     message.warning(t('chart.noConnection'))
     return
   }
@@ -447,8 +461,8 @@ const handleWheel = (e: WheelEvent) => {
     const newZoomX = (timeRange.value * 1000) / newSpan
     zoomX.value = Math.max(0.05, Math.min(200, newZoomX))
 
-    const ref = frozenTime ?? Date.now()
-    panTimeMs.value = Math.max(0, ref - newTMax)
+    const refTime = frozenTime ?? Date.now()
+    panTimeMs.value = Math.max(0, refTime - newTMax)
     isLiveMode.value = panTimeMs.value < 50
   }
 
@@ -488,7 +502,6 @@ const handleMouseMove = (e: MouseEvent) => {
   // 时间轴平移: 向右拖 → 看过去
   const timeSpan = plotInfo.tMax - plotInfo.tMin
   const dtMs = -(dx / plotInfo.w) * timeSpan
-  const ref = frozenTime ?? Date.now()
   panTimeMs.value = Math.max(0, panTimeMs.value + dtMs)
   isLiveMode.value = panTimeMs.value < 50
 
@@ -526,6 +539,11 @@ watch([gridEnabled, lineWidth, autoScale, yMin, yMax, selectedChannels, zoomX, p
   }
 })
 
+// 切换连接时清空旧数据
+watch(chartConnectionId, () => {
+  clearChart()
+})
+
 onMounted(() => {
   window.addEventListener('resize', onResize)
   window.addEventListener('mousemove', handleMouseMove)
@@ -561,6 +579,23 @@ onUnmounted(() => {
       </div>
 
       <NDivider style="margin: 16px 0" />
+
+      <!-- 连接选择 -->
+      <div class="config-section">
+        <div class="section-title">
+          <NIcon :component="AnalyticsOutline" size="16" />
+          <span>目标连接</span>
+        </div>
+        <NSelect
+          v-model:value="chartConnectionId"
+          :options="connectionOptions"
+          placeholder="选择串口连接"
+          size="small"
+          clearable
+        />
+      </div>
+
+      <NDivider style="margin: 12px 0" />
 
       <!-- 数据格式提示 -->
       <div class="format-hint">

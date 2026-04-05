@@ -2,7 +2,7 @@
 import { ref, computed, onUnmounted } from 'vue'
 import {
   NButton, NSpace, NIcon, NTooltip, NDivider, NTag,
-  NScrollbar,
+  NScrollbar, NSelect,
   useMessage
 } from 'naive-ui'
 import {
@@ -13,10 +13,20 @@ import {
 } from '@vicons/ionicons5'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
-import { sendDataToCurrent, currentConnectionId } from '@/stores/serial'
+import { sendData, activeConnections } from '@/stores/serial'
 import { t } from '@/stores/i18n'
 
 const message = useMessage()
+
+// 目标连接选择
+const targetConnectionId = ref<string | null>(null)
+
+const connectionOptions = computed(() =>
+  activeConnections.value.map(c => ({
+    label: `${c.config.port_name} (${c.status === 'Connected' ? '已连接' : '未连接'})`,
+    value: c.connection_id,
+  }))
+)
 
 // ========== 脚本文件管理 ==========
 
@@ -103,7 +113,7 @@ let activeTimers: number[] = []
 
 const runScript = async () => {
   if (isRunning.value) return
-  if (!currentConnectionId.value) {
+  if (!targetConnectionId.value) {
     message.warning(t('script.noConnection'))
     addLog('warn', t('script.noConnection'))
     return
@@ -121,7 +131,7 @@ const runScript = async () => {
     send: async (data: string) => {
       if (runningAbort?.signal.aborted) throw new Error('Script stopped')
       try {
-        await sendDataToCurrent(data, false)
+        await sendData(targetConnectionId.value!, data, false)
         addLog('info', `TX: ${data.replace(/\n/g, '\\n')}`)
       } catch (e) {
         addLog('error', `Send failed: ${String(e)}`)
@@ -131,7 +141,7 @@ const runScript = async () => {
     sendHex: async (hex: string) => {
       if (runningAbort?.signal.aborted) throw new Error('Script stopped')
       try {
-        await sendDataToCurrent(hex, true)
+        await sendData(targetConnectionId.value!, hex, true)
         addLog('info', `TX(HEX): ${hex}`)
       } catch (e) {
         addLog('error', `Send failed: ${String(e)}`)
@@ -239,7 +249,7 @@ const openFile = async () => {
 
     const filePath = selected as string
     const content = await readTextFile(filePath)
-    const name = filePath.split(/[/\\]/).pop() || 'unknown.js'
+    const name = filePath.split(/[\/\\]/).pop() || 'unknown.js'
 
     // 检查是否已打开
     const existing = scripts.value.find(s => s.path === filePath)
@@ -274,7 +284,7 @@ const saveFile = async () => {
       if (!filePath) return
       await writeTextFile(filePath, s.content)
       s.path = filePath
-      s.name = filePath.split(/[/\\]/).pop() || s.name
+      s.name = filePath.split(/[\/\\]/).pop() || s.name
     }
     s.modified = false
     message.success(t('script.savedMsg'))
@@ -363,6 +373,15 @@ onUnmounted(() => {
           <NTag v-if="isRunning" size="small" type="success">{{ t('script.running') }}</NTag>
         </div>
         <NSpace>
+          <!-- 目标连接选择 -->
+          <NSelect
+            v-model:value="targetConnectionId"
+            :options="connectionOptions"
+            placeholder="选择目标串口"
+            size="small"
+            style="width: 160px"
+            clearable
+          />
           <NButton size="small" @click="openFile">
             <template #icon><NIcon :component="FolderOpenOutline" /></template>
             {{ t('script.open') }}

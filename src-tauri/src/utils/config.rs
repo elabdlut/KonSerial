@@ -98,7 +98,7 @@ impl AppConfig {
         AppConfig {
             serial: SerialConfig {
                 port: String::new(),
-                baud_rate: 9600,
+                baud_rate: 115200,
                 data_bits: 8,
                 stop_bits: 1,
                 parity: String::from("None"),

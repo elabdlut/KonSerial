@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"pnpm build\",\"timeout\":120000,\"description\":\"Run build to verify all TS errors are resolved\"}",
+  "error": "Exit code 2\n\n> konserial@0.1.0 build /home/sratle/workspace/rust/KonSerial\n> vue-tsc --noEmit && vite build\n\nsrc/components/SerialConnectionPane.vue(2,42): error TS6133: 'onMounted' is declared but its value is never read.\nsrc/components/SerialConnectionPane.vue(2,53): error TS6133: 'onUnmounted' is declared but its value is never read.\n ELIFECYCLE  Command failed with exit code 2.",
+  "timestamp": "2026-04-05T08:02:02.867Z",
+  "retry_count": 1
+}
