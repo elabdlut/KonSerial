@@ -192,15 +192,51 @@
   },
   "hotPaths": [
     {
-      "path": "src/stores/serial.ts",
-      "accessCount": 10,
-      "lastAccessed": 1775376031429,
+      "path": "src/views/ScriptView.vue",
+      "accessCount": 23,
+      "lastAccessed": 1775383294559,
       "type": "file"
     },
     {
       "path": "src/components/SerialConnectionPane.vue",
+      "accessCount": 21,
+      "lastAccessed": 1775384572205,
+      "type": "file"
+    },
+    {
+      "path": "src/stores/serial.ts",
+      "accessCount": 15,
+      "lastAccessed": 1775383571877,
+      "type": "file"
+    },
+    {
+      "path": "src/stores/i18n.ts",
       "accessCount": 9,
-      "lastAccessed": 1775376127248,
+      "lastAccessed": 1775384585715,
+      "type": "file"
+    },
+    {
+      "path": "src/components/Layout.vue",
+      "accessCount": 7,
+      "lastAccessed": 1775382594934,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/serial/port_manager.rs",
+      "accessCount": 7,
+      "lastAccessed": 1775383462431,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/serial/commands.rs",
+      "accessCount": 7,
+      "lastAccessed": 1775383462638,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/lib.rs",
+      "accessCount": 7,
+      "lastAccessed": 1775383462869,
       "type": "file"
     },
     {
@@ -210,45 +246,27 @@
       "type": "file"
     },
     {
-      "path": "src/views/ScriptView.vue",
-      "accessCount": 5,
-      "lastAccessed": 1775376581049,
-      "type": "file"
-    },
-    {
       "path": "src/router/index.ts",
       "accessCount": 5,
       "lastAccessed": 1775376759892,
       "type": "file"
     },
     {
-      "path": "src/components/Layout.vue",
-      "accessCount": 4,
-      "lastAccessed": 1775376767718,
+      "path": "src/App.vue",
+      "accessCount": 5,
+      "lastAccessed": 1775382276516,
       "type": "file"
     },
     {
-      "path": "src/stores/i18n.ts",
+      "path": "src/stores/script.ts",
       "accessCount": 4,
-      "lastAccessed": 1775377284149,
+      "lastAccessed": 1775382466451,
       "type": "file"
     },
     {
       "path": "src/views/SerialView.vue",
       "accessCount": 3,
       "lastAccessed": 1775267438807,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/serial/port_manager.rs",
-      "accessCount": 3,
-      "lastAccessed": 1775375667549,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/lib.rs",
-      "accessCount": 3,
-      "lastAccessed": 1775376569115,
       "type": "file"
     },
     {
@@ -264,21 +282,21 @@
       "type": "file"
     },
     {
-      "path": "src/App.vue",
+      "path": "src-tauri/tauri.conf.json",
       "accessCount": 3,
-      "lastAccessed": 1775376670734,
+      "lastAccessed": 1775383307976,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/script/mod.rs",
+      "accessCount": 3,
+      "lastAccessed": 1775383314857,
       "type": "file"
     },
     {
       "path": "CLAUDE.md",
       "accessCount": 2,
       "lastAccessed": 1775266106394,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/serial/commands.rs",
-      "accessCount": 2,
-      "lastAccessed": 1775266775988,
       "type": "file"
     },
     {
@@ -300,9 +318,27 @@
       "type": "file"
     },
     {
+      "path": "src/main.ts",
+      "accessCount": 2,
+      "lastAccessed": 1775382227747,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/Cargo.toml",
+      "accessCount": 2,
+      "lastAccessed": 1775382340469,
+      "type": "file"
+    },
+    {
       "path": "package.json",
-      "accessCount": 1,
-      "lastAccessed": 1775266006232,
+      "accessCount": 2,
+      "lastAccessed": 1775383197456,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/serial/mod.rs",
+      "accessCount": 2,
+      "lastAccessed": 1775383308007,
       "type": "file"
     },
     {
@@ -324,33 +360,9 @@
       "type": "file"
     },
     {
-      "path": "src-tauri/Cargo.toml",
-      "accessCount": 1,
-      "lastAccessed": 1775266018926,
-      "type": "file"
-    },
-    {
       "path": "src-tauri/src/main.rs",
       "accessCount": 1,
       "lastAccessed": 1775266018950,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/tauri.conf.json",
-      "accessCount": 1,
-      "lastAccessed": 1775266018979,
-      "type": "file"
-    },
-    {
-      "path": "src/main.ts",
-      "accessCount": 1,
-      "lastAccessed": 1775266024485,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/serial/mod.rs",
-      "accessCount": 1,
-      "lastAccessed": 1775266024549,
       "type": "file"
     },
     {
@@ -396,15 +408,27 @@
       "type": "file"
     },
     {
-      "path": "src-tauri/src/script/mod.rs",
-      "accessCount": 1,
-      "lastAccessed": 1775376569195,
-      "type": "file"
-    },
-    {
       "path": "src-tauri/src/data_logger/commands.rs",
       "accessCount": 1,
       "lastAccessed": 1775376574189,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/serial/protocol.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775383308037,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/capabilities/desktop.json",
+      "accessCount": 1,
+      "lastAccessed": 1775383311436,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/capabilities/default.json",
+      "accessCount": 1,
+      "lastAccessed": 1775383311481,
       "type": "file"
     }
   ],

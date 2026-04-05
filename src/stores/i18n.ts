@@ -55,6 +55,10 @@ const zhCN: Messages = {
   'serial.connectedMsg': '串口连接成功',
   'serial.operationFail': '操作失败: {0}',
   'serial.sendFail': '发送失败: {0}',
+  'serial.sendFile': '发送文件',
+  'serial.fileSent': '文件已发送 ({0} 字节)',
+  'serial.fileSendFail': '发送文件失败: {0}',
+  'serial.searchLog': '搜索日志',
   'serial.connectedLog': '已连接 {0} ({1} bps, {2}-{3}-{4})',
 
   // === SettingsView ===
@@ -231,6 +235,10 @@ const enUS: Messages = {
   'serial.connectedMsg': 'Connected successfully',
   'serial.operationFail': 'Operation failed: {0}',
   'serial.sendFail': 'Send failed: {0}',
+  'serial.sendFile': 'Send File',
+  'serial.fileSent': 'File sent ({0} bytes)',
+  'serial.fileSendFail': 'File send failed: {0}',
+  'serial.searchLog': 'Search logs',
   'serial.connectedLog': 'Connected {0} ({1} bps, {2}-{3}-{4})',
 
   // === SettingsView ===

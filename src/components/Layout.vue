@@ -38,7 +38,11 @@ const menuItems = computed(() => [
     </aside>
 
     <main class="main-content">
-      <RouterView />
+      <router-view v-slot="{ Component }">
+        <keep-alive>
+          <component :is="Component" />
+        </keep-alive>
+      </router-view>
     </main>
   </div>
 </template>

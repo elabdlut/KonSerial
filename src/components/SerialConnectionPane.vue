@@ -2,12 +2,13 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import {
   NButton, NSelect, NSpace, NInput, NTag, NIcon, NTooltip, NSwitch,
-  NScrollbar, NDivider, NInputGroup,
+  NScrollbar, NDivider, NInputGroup, NCheckboxGroup, NCheckbox,
   useMessage
 } from 'naive-ui'
 import {
   RefreshOutline, FlashOutline, CloseOutline, SendOutline,
-  TrashOutline, SettingsOutline, PulseOutline, SwapHorizontalOutline
+  TrashOutline, SettingsOutline, PulseOutline, SwapHorizontalOutline,
+  DocumentOutline
 } from '@vicons/ionicons5'
 import {
   availablePorts,
@@ -15,6 +16,7 @@ import {
   openSerialPort,
   closeSerialPort,
   sendData,
+  sendFile,
   generateConnectionId,
   getPortDisplayName,
   activeConnections,
@@ -25,6 +27,8 @@ import {
   setConnectionDisplay,
   type SerialPortConfig,
 } from '@/stores/serial'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import { readFile } from '@tauri-apps/plugin-fs'
 import { t } from '@/stores/i18n'
 
 const props = defineProps<{
@@ -87,6 +91,22 @@ const connectionStats = computed(() => {
     sent: connectionInfo.value.bytes_sent,
     received: connectionInfo.value.bytes_received
   }
+})
+
+// 终端日志过滤
+const logFilterText = ref('')
+const logFilterTypes = ref<string[]>(['tx', 'rx', 'system', 'error'])
+
+const filteredTerminalLogs = computed(() => {
+  const text = logFilterText.value.trim().toLowerCase()
+  return terminalLogs.value.filter((item) => {
+    if (!logFilterTypes.value.includes(item.type)) return false
+    if (!text) return true
+    return (
+      item.content.toLowerCase().includes(text) ||
+      item.time.toLowerCase().includes(text)
+    )
+  })
 })
 
 const portSelectOpen = ref(false)
@@ -229,14 +249,22 @@ const handleSend = async () => {
       textToSend += appendNewline.value
     }
     await sendData(props.connectionId, textToSend, hexSend.value)
-    addConnectionLog(props.connectionId, {
-      type: 'tx',
-      content: sendText.value,
-      time: new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-    })
     sendText.value = ''
   } catch (e) {
     message.error(t('serial.sendFail', String(e)))
+  }
+}
+
+const handleSendFile = async () => {
+  if (!props.connectionId) return
+  try {
+    const selected = await openDialog({ multiple: false })
+    if (!selected) return
+    const bytes = await readFile(selected as string)
+    const sent = await sendFile(props.connectionId, bytes)
+    message.success(t('serial.fileSent', sent))
+  } catch (e) {
+    message.error(t('serial.fileSendFail', String(e)))
   }
 }
 
@@ -247,7 +275,7 @@ const clearLog = () => {
 }
 
 // 自动滚动到底部
-watch(() => terminalLogs.value.length, () => {
+watch(() => filteredTerminalLogs.value.length, () => {
   if (display.value.autoScroll) {
     nextTick(() => {
       scrollbarRef.value?.scrollTo({ top: 999999 })
@@ -422,10 +450,29 @@ watch(() => terminalLogs.value.length, () => {
           </NSpace>
         </div>
 
+        <div class="terminal-filter-bar">
+          <NInput
+            v-model:value="logFilterText"
+            :placeholder="t('serial.searchLog')"
+            size="tiny"
+            clearable
+            style="width: 140px"
+          />
+          <NCheckboxGroup v-model:value="logFilterTypes" size="small">
+            <NSpace :size="8">
+              <NCheckbox value="tx" label="TX" />
+              <NCheckbox value="rx" label="RX" />
+              <NCheckbox value="system" label="SYS" />
+              <NCheckbox value="error" label="ERR" />
+            </NSpace>
+          </NCheckboxGroup>
+          <NTag size="small" :bordered="false" type="info">{{ filteredTerminalLogs.length }} / {{ terminalLogs.length }}</NTag>
+        </div>
+
         <NScrollbar ref="scrollbarRef" class="terminal-content">
           <div class="terminal-body">
             <div
-              v-for="(item, idx) in terminalLogs"
+              v-for="(item, idx) in filteredTerminalLogs"
               :key="idx"
               class="log-line"
               :class="item.type"
@@ -438,7 +485,7 @@ watch(() => terminalLogs.value.length, () => {
                 {{ display.hexDisplay ? formatHex(item.content) : item.content }}
               </span>
             </div>
-            <div v-if="terminalLogs.length === 0" class="terminal-empty">
+            <div v-if="filteredTerminalLogs.length === 0" class="terminal-empty">
               <NIcon :component="SwapHorizontalOutline" size="40" />
               <p>{{ t('serial.emptyHint') }}</p>
             </div>
@@ -477,6 +524,13 @@ watch(() => terminalLogs.value.length, () => {
           >
             <template #icon><NIcon :component="SendOutline" /></template>
             {{ t('serial.send') }}
+          </NButton>
+          <NButton
+            :disabled="!isConnected"
+            @click="handleSendFile"
+          >
+            <template #icon><NIcon :component="DocumentOutline" /></template>
+            {{ t('serial.sendFile') }}
           </NButton>
         </div>
       </div>
@@ -657,6 +711,15 @@ watch(() => terminalLogs.value.length, () => {
   align-items: center;
   padding: 12px 16px;
   background: #252526;
+  border-bottom: 1px solid #333;
+}
+
+.terminal-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #1e1e1e;
   border-bottom: 1px solid #333;
 }
 

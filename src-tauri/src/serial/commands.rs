@@ -117,6 +117,19 @@ pub async fn send_serial_data(
     mgr.send(&connection_id, data).await
 }
 
+/// 发送文件到指定串口
+#[tauri::command]
+pub async fn send_serial_file(
+    manager: State<'_, Arc<Mutex<PortManager>>>,
+    connection_id: String,
+    data: Vec<u8>,
+    chunk_size: Option<usize>,
+    delay_ms: Option<u64>,
+) -> Result<usize, String> {
+    let mgr = manager.lock().await;
+    mgr.send_file(&connection_id, data, chunk_size.unwrap_or(256), delay_ms.unwrap_or(5)).await
+}
+
 /// 检查指定串口是否已连接
 #[tauri::command]
 pub async fn is_serial_connected(

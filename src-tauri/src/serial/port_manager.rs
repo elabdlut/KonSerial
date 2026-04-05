@@ -391,6 +391,50 @@ impl PortManager {
         }
     }
     
+    /// 发送文件到指定串口（分块写入，避免缓冲区溢出）
+    pub async fn send_file(
+        &self,
+        connection_id: &str,
+        data: Vec<u8>,
+        chunk_size: usize,
+        delay_ms: u64,
+    ) -> Result<usize, String> {
+        let mut conns = self.connections.write().await;
+
+        if let Some(conn) = conns.get_mut(connection_id) {
+            let mut port = conn.port.lock().await;
+            let mut total_sent = 0usize;
+            let chunk_size = chunk_size.max(1);
+
+            for chunk in data.chunks(chunk_size) {
+                match port.write(chunk) {
+                    Ok(bytes) => {
+                        total_sent += bytes;
+                    }
+                    Err(e) => {
+                        let error_msg = e.to_string();
+                        conn.info.status = PortStatus::Error(error_msg.clone());
+                        conn.info.last_error = Some(error_msg.clone());
+                        return Err(error_msg);
+                    }
+                }
+
+                if total_sent < data.len() {
+                    drop(port);
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                    port = conn.port.lock().await;
+                }
+            }
+
+            conn.info.bytes_sent += total_sent as u64;
+            // 持久化 TX 数据到 SQLite（只记录摘要）
+            let _ = self.data_logger.log_tx(conn.session_id, &format!("[FILE] {} bytes", total_sent).into_bytes());
+            Ok(total_sent)
+        } else {
+            Err(format!("连接 {} 不存在", connection_id))
+        }
+    }
+
     /// 检查指定连接是否存在且已连接
     pub async fn is_connected(&self, connection_id: &str) -> bool {
         let conns = self.connections.read().await;

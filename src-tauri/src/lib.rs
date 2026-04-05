@@ -71,6 +71,7 @@ pub fn run() {
             crate::serial::commands::get_all_connections,
             crate::serial::commands::get_global_runtime_info,
             crate::serial::commands::send_serial_data,
+            crate::serial::commands::send_serial_file,
             crate::serial::commands::is_serial_connected,
             // 数据日志命令
             crate::data_logger::commands::get_sessions,

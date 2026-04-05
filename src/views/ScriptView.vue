@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import {
   NButton, NSpace, NIcon, NTooltip, NDivider, NTag,
-  NScrollbar, NSelect,
+  NScrollbar, NSelect, NCheckboxGroup, NCheckbox,
   useMessage
 } from 'naive-ui'
 import {
@@ -13,215 +13,67 @@ import {
 } from '@vicons/ionicons5'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
-import { sendData, activeConnections } from '@/stores/serial'
+import {
+  activeConnections, type ConnectionInfo,
+} from '@/stores/serial'
+import {
+  scriptFiles, activeScriptId, scriptLogs, scriptIsRunning, activeScript,
+  selectedConnectionIds,
+  scriptTemplates, clearScriptLogs, runScript, stopScript,
+  newScriptFile, removeScriptFile, updateScriptContent,
+} from '@/stores/script'
 import { t } from '@/stores/i18n'
 
 const message = useMessage()
 
-// 目标连接选择
-const targetConnectionId = ref<string | null>(null)
+// ========== 连接选择（多选） ==========
 
 const connectionOptions = computed(() =>
-  activeConnections.value.map(c => ({
+  activeConnections.value.map((c: ConnectionInfo) => ({
     label: `${c.config.port_name} (${c.status === 'Connected' ? '已连接' : '未连接'})`,
     value: c.connection_id,
   }))
 )
 
-// ========== 脚本文件管理 ==========
+// ========== 模板选择 ==========
 
-interface ScriptFile {
-  id: string
-  name: string
-  content: string
-  path: string | null  // null = 未保存到磁盘
-  modified: boolean
+const selectedTemplate = ref<string | null>(null)
+
+const applyTemplate = (val: string | null) => {
+  const tpl = scriptTemplates.find(t => t.value === val)
+  if (!tpl) return
+  const s = activeScript.value
+  if (s) {
+    updateScriptContent(s.id, tpl.content)
+  }
 }
 
-const scripts = ref<ScriptFile[]>([
-  {
-    id: 'default',
-    name: 'example.js',
-    path: null,
-    modified: false,
-    content: `// KonSerial Script Example
-// Available API:
-//   serial.send(text)    - Send text to serial port
-//   serial.sendHex(hex)  - Send hex data (e.g. "01 02 FF")
-//   sleep(ms)            - Wait for specified milliseconds
-//   console.log(...)     - Print to log panel
-
-// Example: Send hello message
-await serial.send("Hello from KonSerial!\\n");
-console.log("Message sent!");
-
-// Example: Periodic data sending
-for (let i = 0; i < 5; i++) {
-  await serial.send("count:" + i + "\\n");
-  await sleep(1000);
-}
-console.log("Done!");
-`,
-  },
-])
-
-const activeScriptId = ref('default')
-const isRunning = ref(false)
-
-// 当前活跃脚本
-const activeScript = computed(() =>
-  scripts.value.find(s => s.id === activeScriptId.value)
-)
+// ========== 编辑器计算属性 ==========
 
 const scriptContent = computed({
   get: () => activeScript.value?.content ?? '',
   set: (val: string) => {
-    const s = scripts.value.find(s => s.id === activeScriptId.value)
-    if (s) {
-      s.content = val
-      s.modified = true
-    }
+    const s = activeScript.value
+    if (s) updateScriptContent(s.id, val)
   },
 })
 
 const lineCount = computed(() => scriptContent.value.split('\n').length)
 const charCount = computed(() => scriptContent.value.length)
 
-// ========== 运行日志 ==========
-
-interface LogEntry {
-  type: 'info' | 'error' | 'success' | 'warn'
-  content: string
-  time: string
-}
-const logs = ref<LogEntry[]>([])
+// 日志滚动
 const logScrollRef = ref()
-
-const addLog = (type: LogEntry['type'], content: string) => {
-  const now = new Date()
-  const time = now.toLocaleTimeString('zh-CN', { hour12: false })
-  logs.value.push({ type, content, time })
-  // 限制日志数量
-  if (logs.value.length > 500) logs.value.splice(0, logs.value.length - 500)
-}
-const clearLogs = () => { logs.value = [] }
-
-// ========== 脚本执行引擎 ==========
-
-let runningAbort: AbortController | null = null
-let activeTimers: number[] = []
-
-const runScript = async () => {
-  if (isRunning.value) return
-  if (!targetConnectionId.value) {
-    message.warning(t('script.noConnection'))
-    addLog('warn', t('script.noConnection'))
-    return
-  }
-
-  isRunning.value = true
-  addLog('info', t('script.started'))
-  message.success(t('script.startedMsg'))
-  runningAbort = new AbortController()
-
-  const code = scriptContent.value
-
-  // 构建沙盒 API
-  const serialApi = {
-    send: async (data: string) => {
-      if (runningAbort?.signal.aborted) throw new Error('Script stopped')
-      try {
-        await sendData(targetConnectionId.value!, data, false)
-        addLog('info', `TX: ${data.replace(/\n/g, '\\n')}`)
-      } catch (e) {
-        addLog('error', `Send failed: ${String(e)}`)
-        throw e
-      }
-    },
-    sendHex: async (hex: string) => {
-      if (runningAbort?.signal.aborted) throw new Error('Script stopped')
-      try {
-        await sendData(targetConnectionId.value!, hex, true)
-        addLog('info', `TX(HEX): ${hex}`)
-      } catch (e) {
-        addLog('error', `Send failed: ${String(e)}`)
-        throw e
-      }
-    },
-  }
-
-  const sleepFn = (ms: number) => {
-    return new Promise<void>((resolve, reject) => {
-      if (runningAbort?.signal.aborted) { reject(new Error('Script stopped')); return }
-      const id = window.setTimeout(() => {
-        activeTimers = activeTimers.filter(t => t !== id)
-        if (runningAbort?.signal.aborted) { reject(new Error('Script stopped')); return }
-        resolve()
-      }, ms)
-      activeTimers.push(id)
-      runningAbort?.signal.addEventListener('abort', () => {
-        clearTimeout(id)
-        reject(new Error('Script stopped'))
-      })
-    })
-  }
-
-  // Console 拦截
-  const consoleMock = {
-    log: (...args: unknown[]) => addLog('info', args.map(String).join(' ')),
-    warn: (...args: unknown[]) => addLog('warn', args.map(String).join(' ')),
-    error: (...args: unknown[]) => addLog('error', args.map(String).join(' ')),
-    info: (...args: unknown[]) => addLog('info', args.map(String).join(' ')),
-  }
-
-  try {
-    // 用 AsyncFunction 构建沙盒
-    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
-    const fn = new AsyncFunction('serial', 'sleep', 'console', code)
-    await fn(serialApi, sleepFn, consoleMock)
-    if (!runningAbort?.signal.aborted) {
-      addLog('success', t('script.completed'))
-    }
-  } catch (e: unknown) {
-    const msg = String(e)
-    if (!msg.includes('Script stopped')) {
-      addLog('error', `Error: ${msg}`)
-    }
-  } finally {
-    cleanupTimers()
-    isRunning.value = false
-    runningAbort = null
-  }
-}
-
-const stopScript = () => {
-  if (!isRunning.value) return
-  runningAbort?.abort()
-  cleanupTimers()
-  isRunning.value = false
-  addLog('info', t('script.stoppedMsg'))
-  message.info(t('script.stoppedMsg'))
-}
-
-const cleanupTimers = () => {
-  activeTimers.forEach(id => clearTimeout(id))
-  activeTimers = []
-}
+watch(() => scriptLogs.value.length, () => {
+  nextTick(() => {
+    logScrollRef.value?.scrollTo({ top: 999999 })
+  })
+})
 
 // ========== 文件操作 ==========
 
-let nextId = 1
-
 const newScript = () => {
-  const id = `script_${Date.now()}_${nextId++}`
-  scripts.value.push({
-    id,
-    name: `untitled_${nextId}.js`,
-    path: null,
-    modified: false,
-    content: '// New script\n\nawait serial.send("Hello!\\n");\n',
-  })
-  activeScriptId.value = id
+  newScriptFile()
+  selectedTemplate.value = null
   message.info(t('script.newCreated'))
 }
 
@@ -230,13 +82,7 @@ const selectScript = (id: string) => {
 }
 
 const removeScript = (id: string) => {
-  if (scripts.value.length <= 1) return
-  const idx = scripts.value.findIndex(s => s.id === id)
-  if (idx < 0) return
-  scripts.value.splice(idx, 1)
-  if (activeScriptId.value === id) {
-    activeScriptId.value = scripts.value[0].id
-  }
+  removeScriptFile(id)
 }
 
 const openFile = async () => {
@@ -251,18 +97,18 @@ const openFile = async () => {
     const content = await readTextFile(filePath)
     const name = filePath.split(/[\/\\]/).pop() || 'unknown.js'
 
-    // 检查是否已打开
-    const existing = scripts.value.find(s => s.path === filePath)
+    const existing = scriptFiles.value.find(s => s.path === filePath)
     if (existing) {
-      existing.content = content
+      updateScriptContent(existing.id, content)
       existing.modified = false
       activeScriptId.value = existing.id
       return
     }
 
-    const id = `file_${Date.now()}_${nextId++}`
-    scripts.value.push({ id, name, path: filePath, content, modified: false })
+    const id = `file_${Date.now()}_${Date.now()}`
+    scriptFiles.value.push({ id, name, path: filePath, content, modified: false })
     activeScriptId.value = id
+    selectedTemplate.value = null
     message.success(t('script.openedMsg'))
   } catch (e) {
     message.error(`Open failed: ${String(e)}`)
@@ -294,13 +140,25 @@ const saveFile = async () => {
 }
 
 const onContentChange = () => {
-  const s = scripts.value.find(s => s.id === activeScriptId.value)
+  const s = activeScript.value
   if (s) s.modified = true
 }
 
-onUnmounted(() => {
-  stopScript()
-})
+// ========== 脚本运行 ==========
+
+const handleRun = () => {
+  if (scriptIsRunning.value) {
+    stopScript()
+    message.info(t('script.stoppedMsg'))
+  } else {
+    runScript(selectedConnectionIds.value, scriptContent.value, (type, msg) => {
+      if (type === 'success') message.success(msg)
+      if (type === 'error') message.error(msg)
+      if (type === 'warn') message.warning(msg)
+      if (type === 'info') message.info(msg)
+    })
+  }
+}
 </script>
 
 <template>
@@ -325,7 +183,7 @@ onUnmounted(() => {
       <NScrollbar style="flex: 1">
         <div class="file-list">
           <div
-            v-for="file in scripts"
+            v-for="file in scriptFiles"
             :key="file.id"
             class="file-item"
             :class="{ active: file.id === activeScriptId }"
@@ -335,7 +193,7 @@ onUnmounted(() => {
             <span class="file-label">{{ file.name }}</span>
             <span v-if="file.modified" class="modified-dot">●</span>
             <NButton
-              v-if="scripts.length > 1"
+              v-if="scriptFiles.length > 1"
               size="tiny"
               quaternary
               class="close-btn"
@@ -349,7 +207,6 @@ onUnmounted(() => {
 
       <NDivider style="margin: 12px 0" />
 
-      <!-- 脚本信息 -->
       <div class="script-info">
         <div class="info-row">
           <span>{{ t('script.lines') }}</span>
@@ -364,23 +221,21 @@ onUnmounted(() => {
 
     <!-- 中间编辑区 -->
     <main class="editor-area">
-      <!-- 工具栏 -->
       <div class="editor-toolbar">
         <div class="toolbar-left">
           <NIcon :component="CodeSlashOutline" size="18" />
           <span class="file-name">{{ activeScript?.name }}</span>
           <NTag v-if="activeScript?.modified" size="small" type="warning">{{ t('script.unsaved') }}</NTag>
-          <NTag v-if="isRunning" size="small" type="success">{{ t('script.running') }}</NTag>
+          <NTag v-if="scriptIsRunning" size="small" type="success">{{ t('script.running') }}</NTag>
         </div>
         <NSpace>
-          <!-- 目标连接选择 -->
           <NSelect
-            v-model:value="targetConnectionId"
-            :options="connectionOptions"
-            placeholder="选择目标串口"
+            v-model:value="selectedTemplate"
+            :options="scriptTemplates.map(t => ({ label: t.label, value: t.value }))"
+            placeholder="选择模板"
             size="small"
             style="width: 160px"
-            clearable
+            @update:value="applyTemplate"
           />
           <NButton size="small" @click="openFile">
             <template #icon><NIcon :component="FolderOpenOutline" /></template>
@@ -392,19 +247,32 @@ onUnmounted(() => {
           </NButton>
           <NDivider vertical />
           <NButton
-            :type="isRunning ? 'error' : 'primary'"
+            :type="scriptIsRunning ? 'error' : 'primary'"
             size="small"
-            @click="isRunning ? stopScript() : runScript()"
+            @click="handleRun"
           >
             <template #icon>
-              <NIcon :component="isRunning ? StopOutline : PlayOutline" />
+              <NIcon :component="scriptIsRunning ? StopOutline : PlayOutline" />
             </template>
-            {{ isRunning ? t('script.stop') : t('script.run') }}
+            {{ scriptIsRunning ? t('script.stop') : t('script.run') }}
           </NButton>
         </NSpace>
       </div>
 
-      <!-- 编辑器 -->
+      <div class="target-bar">
+        <NCheckboxGroup v-model:value="selectedConnectionIds">
+          <NSpace>
+            <NCheckbox
+              v-for="opt in connectionOptions"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </NCheckbox>
+          </NSpace>
+        </NCheckboxGroup>
+      </div>
+
       <div class="editor-container">
         <div class="line-numbers">
           <div v-for="n in lineCount" :key="n">{{ n }}</div>
@@ -414,7 +282,7 @@ onUnmounted(() => {
           @input="onContentChange"
           class="code-editor"
           spellcheck="false"
-          :disabled="isRunning"
+          :disabled="scriptIsRunning"
         ></textarea>
       </div>
     </main>
@@ -425,9 +293,9 @@ onUnmounted(() => {
         <div class="section-title">
           <NIcon :component="TimeOutline" size="16" />
           <span>{{ t('script.log') }}</span>
-          <NTag size="small" :bordered="false">{{ logs.length }}</NTag>
+          <NTag size="small" :bordered="false">{{ scriptLogs.length }}</NTag>
         </div>
-        <NButton size="tiny" quaternary @click="clearLogs">
+        <NButton size="tiny" quaternary @click="clearScriptLogs">
           <template #icon><NIcon :component="TrashOutline" /></template>
         </NButton>
       </div>
@@ -435,7 +303,7 @@ onUnmounted(() => {
       <NScrollbar ref="logScrollRef" class="output-content">
         <div class="log-list">
           <div
-            v-for="(log, idx) in logs"
+            v-for="(log, idx) in scriptLogs"
             :key="idx"
             class="log-item"
             :class="log.type"
@@ -447,7 +315,7 @@ onUnmounted(() => {
             <span class="log-time">{{ log.time }}</span>
             <span class="log-content">{{ log.content }}</span>
           </div>
-          <div v-if="logs.length === 0" class="empty-log">
+          <div v-if="scriptLogs.length === 0" class="empty-log">
             {{ t('script.emptyLog') }}
           </div>
         </div>
@@ -552,6 +420,12 @@ onUnmounted(() => {
   font-size: var(--font-base);
   font-weight: 500;
   color: var(--text-primary);
+}
+
+.target-bar {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background: #fafafa;
 }
 
 .editor-container {

@@ -130,6 +130,34 @@ const connectionByteDecoders: Record<string, TextDecoder> = {}
 const connectionPendingTexts: Record<string, string> = {}
 const connectionFlushTimers: Record<string, number | null> = {}
 
+// ========== 脚本数据回调（按行触发） ==========
+
+type ScriptLineCallback = (line: string) => void
+type AnyScriptLineCallback = (connectionId: string, line: string) => void
+const scriptLineCallbacks: Record<string, ScriptLineCallback[]> = {}
+const anyScriptLineCallbacks: AnyScriptLineCallback[] = []
+
+/** 注册某个连接的按行数据回调（供脚本使用） */
+export function onScriptDataLine(connectionId: string, callback: ScriptLineCallback): () => void {
+  if (!scriptLineCallbacks[connectionId]) scriptLineCallbacks[connectionId] = []
+  scriptLineCallbacks[connectionId].push(callback)
+  return () => {
+    const arr = scriptLineCallbacks[connectionId]
+    if (!arr) return
+    const idx = arr.indexOf(callback)
+    if (idx >= 0) arr.splice(idx, 1)
+  }
+}
+
+/** 注册所有连接的按行数据回调 */
+export function onAnyScriptDataLine(callback: AnyScriptLineCallback): () => void {
+  anyScriptLineCallbacks.push(callback)
+  return () => {
+    const idx = anyScriptLineCallbacks.indexOf(callback)
+    if (idx >= 0) anyScriptLineCallbacks.splice(idx, 1)
+  }
+}
+
 function flushConnectionLines(connectionId: string, force = false) {
   let text = connectionPendingTexts[connectionId] || ''
   if (!text) return
@@ -159,6 +187,10 @@ function flushConnectionLines(connectionId: string, force = false) {
 
     addConnectionLog(connectionId, { type: 'rx', content, time })
     addReceivedData(connectionId, content)
+
+    // 触发脚本行回调
+    scriptLineCallbacks[connectionId]?.forEach(cb => cb(content))
+    anyScriptLineCallbacks.forEach(cb => cb(connectionId, content))
   }
 }
 
@@ -408,6 +440,7 @@ export async function closeSerialPort(connectionId: string): Promise<void> {
     }
     delete connectionPendingTexts[connectionId]
     delete connectionByteDecoders[connectionId]
+    delete scriptLineCallbacks[connectionId]
 
     // 如果是当前连接，切换到其他连接
     if (currentConnectionId.value === connectionId) {
@@ -477,6 +510,14 @@ export async function sendData(
       data: bytes,
     })
 
+    // 自动记录终端 TX 日志（脚本发送也能看到）
+    const time = new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    addConnectionLog(connectionId, {
+      type: 'tx',
+      content: data,
+      time,
+    })
+
     console.log(`[${connectionId}] 已发送 ${sentBytes} 字节`)
 
     // 更新状态
@@ -498,6 +539,38 @@ export async function sendDataToCurrent(
     throw new Error('没有活跃的串口连接')
   }
   return sendData(currentConnectionId.value, data, isHex)
+}
+
+/** 发送文件到指定连接 */
+export async function sendFile(
+  connectionId: string,
+  data: Uint8Array,
+  chunkSize: number = 256,
+  delayMs: number = 5,
+): Promise<number> {
+  try {
+    const sentBytes = await invoke<number>('send_serial_file', {
+      connectionId,
+      data: Array.from(data),
+      chunkSize,
+      delayMs,
+    })
+
+    const time = new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    addConnectionLog(connectionId, {
+      type: 'tx',
+      content: `[FILE] ${sentBytes} bytes`,
+      time,
+    })
+
+    console.log(`[${connectionId}] 已发送文件 ${sentBytes} 字节`)
+
+    await updateGlobalInfo()
+    return sentBytes
+  } catch (error) {
+    console.error('发送文件失败:', error)
+    throw error
+  }
 }
 
 /** 检查指定连接是否已连接 */
