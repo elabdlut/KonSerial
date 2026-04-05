@@ -10,6 +10,7 @@ const menuItems = computed(() => [
   { path: '/serial', icon: '🔌', label: t('nav.serial') },
   { path: '/chart', icon: '📊', label: t('nav.chart') },
   { path: '/script', icon: '📝', label: t('nav.script') },
+  { path: '/history', icon: '📜', label: t('nav.history') },
   { path: '/settings', icon: '⚙️', label: t('nav.settings') }
 ])
 </script>

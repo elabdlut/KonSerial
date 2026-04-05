@@ -26,6 +26,12 @@ const router = createRouter({
       meta: { title: '脚本编辑' }
     },
     {
+      path: '/history',
+      name: 'History',
+      component: () => import('../views/HistoryView.vue'),
+      meta: { title: '历史记录' }
+    },
+    {
       path: '/settings',
       name: 'Settings',
       component: () => import('../views/SettingsView.vue'),

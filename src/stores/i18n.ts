@@ -9,6 +9,7 @@ const zhCN: Messages = {
   'nav.serial': '串口调试',
   'nav.chart': '波形图',
   'nav.script': '脚本编辑',
+  'nav.history': '历史记录',
   'nav.settings': '设置',
   'app.subtitle': '串口调试工具',
 
@@ -158,6 +159,26 @@ const zhCN: Messages = {
   'script.noConnection': '请先连接串口',
   'script.completed': '脚本执行完成',
   'script.openedMsg': '文件已打开',
+
+  // === HistoryView ===
+  'history.sessions': '会话列表',
+  'history.noSessions': '暂无历史会话',
+  'history.records': '数据记录',
+  'history.selectSession': '请选择一个会话查看详情',
+  'history.noRecords': '该会话暂无数据记录',
+  'history.active': '活跃中',
+  'history.exportCsv': '导出 CSV',
+  'history.delete': '删除',
+  'history.text': '文本',
+  'history.time': '时间',
+  'history.direction': '方向',
+  'history.data': '数据',
+  'history.loadFail': '加载失败: {0}',
+  'history.recordsFail': '加载记录失败: {0}',
+  'history.deleted': '会话已删除',
+  'history.deleteFail': '删除失败: {0}',
+  'history.exported': '导出成功',
+  'history.exportFail': '导出失败: {0}',
 }
 
 const enUS: Messages = {
@@ -314,6 +335,26 @@ const enUS: Messages = {
   'script.noConnection': 'Please connect a serial port first',
   'script.completed': 'Script completed',
   'script.openedMsg': 'File opened',
+
+  // === HistoryView ===
+  'history.sessions': 'Sessions',
+  'history.noSessions': 'No historical sessions',
+  'history.records': 'Records',
+  'history.selectSession': 'Select a session to view details',
+  'history.noRecords': 'No data records for this session',
+  'history.active': 'Active',
+  'history.exportCsv': 'Export CSV',
+  'history.delete': 'Delete',
+  'history.text': 'Text',
+  'history.time': 'Time',
+  'history.direction': 'Dir',
+  'history.data': 'Data',
+  'history.loadFail': 'Load failed: {0}',
+  'history.recordsFail': 'Load records failed: {0}',
+  'history.deleted': 'Session deleted',
+  'history.deleteFail': 'Delete failed: {0}',
+  'history.exported': 'Exported',
+  'history.exportFail': 'Export failed: {0}',
 }
 
 const locales: Record<string, Messages> = {

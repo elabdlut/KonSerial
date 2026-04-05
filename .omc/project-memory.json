@@ -211,8 +211,26 @@
     },
     {
       "path": "src/views/ScriptView.vue",
+      "accessCount": 5,
+      "lastAccessed": 1775376581049,
+      "type": "file"
+    },
+    {
+      "path": "src/router/index.ts",
+      "accessCount": 5,
+      "lastAccessed": 1775376759892,
+      "type": "file"
+    },
+    {
+      "path": "src/components/Layout.vue",
       "accessCount": 4,
-      "lastAccessed": 1775267563372,
+      "lastAccessed": 1775376767718,
+      "type": "file"
+    },
+    {
+      "path": "src/stores/i18n.ts",
+      "accessCount": 4,
+      "lastAccessed": 1775377284149,
       "type": "file"
     },
     {
@@ -228,15 +246,33 @@
       "type": "file"
     },
     {
-      "path": "CLAUDE.md",
-      "accessCount": 2,
-      "lastAccessed": 1775266106394,
+      "path": "src-tauri/src/lib.rs",
+      "accessCount": 3,
+      "lastAccessed": 1775376569115,
       "type": "file"
     },
     {
-      "path": "src-tauri/src/lib.rs",
+      "path": "src/views/SettingsView.vue",
+      "accessCount": 3,
+      "lastAccessed": 1775376587869,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/data_logger/mod.rs",
+      "accessCount": 3,
+      "lastAccessed": 1775376593212,
+      "type": "file"
+    },
+    {
+      "path": "src/App.vue",
+      "accessCount": 3,
+      "lastAccessed": 1775376670734,
+      "type": "file"
+    },
+    {
+      "path": "CLAUDE.md",
       "accessCount": 2,
-      "lastAccessed": 1775266775965,
+      "lastAccessed": 1775266106394,
       "type": "file"
     },
     {
@@ -246,45 +282,21 @@
       "type": "file"
     },
     {
-      "path": "src-tauri/src/data_logger/mod.rs",
-      "accessCount": 2,
-      "lastAccessed": 1775266776025,
-      "type": "file"
-    },
-    {
       "path": "src/stores/config.ts",
       "accessCount": 2,
       "lastAccessed": 1775266776627,
       "type": "file"
     },
     {
-      "path": "src/views/SettingsView.vue",
-      "accessCount": 2,
-      "lastAccessed": 1775266776679,
-      "type": "file"
-    },
-    {
-      "path": "src/components/Layout.vue",
-      "accessCount": 2,
-      "lastAccessed": 1775266780808,
-      "type": "file"
-    },
-    {
-      "path": "src/router/index.ts",
-      "accessCount": 2,
-      "lastAccessed": 1775266860759,
-      "type": "file"
-    },
-    {
-      "path": "src/App.vue",
-      "accessCount": 2,
-      "lastAccessed": 1775266860861,
-      "type": "file"
-    },
-    {
       "path": "src-tauri/src/utils/config.rs",
       "accessCount": 2,
       "lastAccessed": 1775376322026,
+      "type": "file"
+    },
+    {
+      "path": "src/views/HistoryView.vue",
+      "accessCount": 2,
+      "lastAccessed": 1775377305660,
       "type": "file"
     },
     {
@@ -369,6 +381,30 @@
       "path": "src-tauri/src/utils/commands.rs",
       "accessCount": 1,
       "lastAccessed": 1775266776831,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/network/mod.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775376569091,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/visualization/mod.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775376569132,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/script/mod.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775376569195,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/data_logger/commands.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775376574189,
       "type": "file"
     }
   ],
