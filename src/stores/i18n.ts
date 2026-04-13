@@ -8,6 +8,7 @@ const zhCN: Messages = {
   // === Layout ===
   'nav.serial': '串口调试',
   'nav.chart': '波形图',
+  'nav.network': '网络调试',
   'nav.script': '脚本编辑',
   'nav.history': '历史记录',
   'nav.settings': '设置',
@@ -59,6 +60,13 @@ const zhCN: Messages = {
   'serial.fileSent': '文件已发送 ({0} 字节)',
   'serial.fileSendFail': '发送文件失败: {0}',
   'serial.searchLog': '搜索日志',
+  'serial.quickCommands': '快捷命令',
+  'serial.addQuickCmd': '添加',
+  'serial.cmdName': '名称',
+  'serial.cmdContent': '内容',
+  'serial.autoReconnect': '自动重连',
+  'serial.reconnectInterval': '间隔 (ms)',
+  'serial.maxReconnectAttempts': '最大次数',
   'serial.connectedLog': '已连接 {0} ({1} bps, {2}-{3}-{4})',
 
   // === SettingsView ===
@@ -95,6 +103,16 @@ const zhCN: Messages = {
   'settings.fontMedium': '中 (14px)',
   'settings.fontLarge': '大 (16px)',
   'settings.fontXLarge': '特大 (18px)',
+  'settings.network': '网络',
+  'settings.networkProtocol': '默认协议',
+  'settings.networkProtocolDesc': '新建网络标签页时的默认协议',
+  'settings.networkHost': '默认主机',
+  'settings.networkHostDesc': '新建网络标签页时的默认主机地址',
+  'settings.networkPort': '默认端口',
+  'settings.networkPortDesc': '新建网络标签页时的默认端口',
+  'settings.networkAutoReconnectDesc': '网络连接断开后是否自动重连',
+  'settings.networkReconnectIntervalDesc': '自动重连的时间间隔',
+  'settings.networkMaxReconnectDesc': '自动重连的最大尝试次数',
 
   // === ChartView ===
   'chart.running': '采集中',
@@ -138,7 +156,8 @@ const zhCN: Messages = {
   'chart.noExportData': '没有数据可导出',
   'chart.exported': '数据已导出',
   'chart.cleared': '图表已清空',
-  'chart.noConnection': '请先连接串口',
+  'chart.noConnection': '请先连接',
+  'chart.selectConnection': '选择连接',
   'chart.goLive': '回到实时',
 
   // === ScriptView ===
@@ -160,7 +179,7 @@ const zhCN: Messages = {
   'script.savedMsg': '脚本已保存',
   'script.newCreated': '已创建新脚本',
   'script.openWip': '打开文件功能开发中...',
-  'script.noConnection': '请先连接串口',
+  'script.noConnection': '请先选择连接',
   'script.completed': '脚本执行完成',
   'script.openedMsg': '文件已打开',
 
@@ -183,13 +202,41 @@ const zhCN: Messages = {
   'history.deleteFail': '删除失败: {0}',
   'history.exported': '导出成功',
   'history.exportFail': '导出失败: {0}',
+
+  // === NetworkView ===
+  'network.listening': '监听中',
+  'network.tcpServer': 'TCP Server',
+  'network.udpServer': 'UDP Server',
+  'network.targetPeer': '目标客户端',
+  'network.selectPeer': '选择客户端',
+  'network.serverStarted': '已启动 {0} {1}:{2}',
+  'network.serverStopped': '服务已停止',
+  'network.connect': '打开连接',
+  'network.disconnect': '断开连接',
+  'network.connected': '已连接',
+  'network.disconnected': '未连接',
+  'network.config': '网络配置',
+  'network.protocol': '协议',
+  'network.host': '主机地址',
+  'network.port': '端口',
+  'network.path': '路径',
+  'network.topic': '主题 (Topic)',
+  'network.terminal': '数据终端',
+  'network.emptyHint': '连接后开始通信',
+  'network.hexSend': 'HEX发送',
+  'network.textSend': '文本发送',
+  'network.send': '发送',
+  'network.clear': '清空',
+  'network.statistics': '数据统计',
 }
 
 const enUS: Messages = {
   // === Layout ===
   'nav.serial': 'Serial',
   'nav.chart': 'Waveform',
+  'nav.network': 'Network',
   'nav.script': 'Script',
+  'nav.history': 'History',
   'nav.settings': 'Settings',
   'app.subtitle': 'Serial Debug Tool',
 
@@ -239,6 +286,13 @@ const enUS: Messages = {
   'serial.fileSent': 'File sent ({0} bytes)',
   'serial.fileSendFail': 'File send failed: {0}',
   'serial.searchLog': 'Search logs',
+  'serial.quickCommands': 'Quick Commands',
+  'serial.addQuickCmd': 'Add',
+  'serial.cmdName': 'Name',
+  'serial.cmdContent': 'Content',
+  'serial.autoReconnect': 'Auto Reconnect',
+  'serial.reconnectInterval': 'Interval (ms)',
+  'serial.maxReconnectAttempts': 'Max Retries',
   'serial.connectedLog': 'Connected {0} ({1} bps, {2}-{3}-{4})',
 
   // === SettingsView ===
@@ -275,6 +329,16 @@ const enUS: Messages = {
   'settings.fontMedium': 'Medium (14px)',
   'settings.fontLarge': 'Large (16px)',
   'settings.fontXLarge': 'X-Large (18px)',
+  'settings.network': 'Network',
+  'settings.networkProtocol': 'Default Protocol',
+  'settings.networkProtocolDesc': 'Default protocol for new network tabs',
+  'settings.networkHost': 'Default Host',
+  'settings.networkHostDesc': 'Default host address for new network tabs',
+  'settings.networkPort': 'Default Port',
+  'settings.networkPortDesc': 'Default port for new network tabs',
+  'settings.networkAutoReconnectDesc': 'Auto reconnect after network disconnection',
+  'settings.networkReconnectIntervalDesc': 'Interval between reconnect attempts',
+  'settings.networkMaxReconnectDesc': 'Maximum number of reconnect attempts',
 
   // === ChartView ===
   'chart.running': 'Running',
@@ -318,7 +382,8 @@ const enUS: Messages = {
   'chart.noExportData': 'No data to export',
   'chart.exported': 'Data exported',
   'chart.cleared': 'Chart cleared',
-  'chart.noConnection': 'Please connect a serial port first',
+  'chart.noConnection': 'Please connect first',
+  'chart.selectConnection': 'Select connection',
   'chart.goLive': 'Go Live',
 
   // === ScriptView ===
@@ -340,7 +405,7 @@ const enUS: Messages = {
   'script.savedMsg': 'Script saved',
   'script.newCreated': 'New script created',
   'script.openWip': 'Open file feature in development...',
-  'script.noConnection': 'Please connect a serial port first',
+  'script.noConnection': 'Please select a connection first',
   'script.completed': 'Script completed',
   'script.openedMsg': 'File opened',
 
@@ -363,6 +428,32 @@ const enUS: Messages = {
   'history.deleteFail': 'Delete failed: {0}',
   'history.exported': 'Exported',
   'history.exportFail': 'Export failed: {0}',
+
+  // === NetworkView ===
+  'network.listening': 'Listening',
+  'network.tcpServer': 'TCP Server',
+  'network.udpServer': 'UDP Server',
+  'network.targetPeer': 'Target Peer',
+  'network.selectPeer': 'Select peer',
+  'network.serverStarted': 'Started {0} {1}:{2}',
+  'network.serverStopped': 'Server stopped',
+  'network.connect': 'Connect',
+  'network.disconnect': 'Disconnect',
+  'network.connected': 'Connected',
+  'network.disconnected': 'Disconnected',
+  'network.config': 'Network Config',
+  'network.protocol': 'Protocol',
+  'network.host': 'Host',
+  'network.port': 'Port',
+  'network.path': 'Path',
+  'network.topic': 'Topic',
+  'network.terminal': 'Terminal',
+  'network.emptyHint': 'Connect to start communication',
+  'network.hexSend': 'HEX Send',
+  'network.textSend': 'Text Send',
+  'network.send': 'Send',
+  'network.clear': 'Clear',
+  'network.statistics': 'Statistics',
 }
 
 const locales: Record<string, Messages> = {

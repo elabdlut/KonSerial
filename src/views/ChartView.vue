@@ -11,6 +11,7 @@ import {
   CameraOutline
 } from '@vicons/ionicons5'
 import { receivedBuffer, currentConnectionId, activeConnections } from '@/stores/serial'
+import { activeConnections as networkActiveConnections } from '@/stores/network'
 import { t } from '@/stores/i18n'
 
 const message = useMessage()
@@ -23,12 +24,16 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 // 选择要监控的连接
 const chartConnectionId = ref<string | null>(currentConnectionId.value)
 
-const connectionOptions = computed(() =>
-  activeConnections.value.map(c => ({
-    label: `${c.config.port_name} (${c.status === 'Connected' ? '已连接' : '未连接'})`,
+const connectionOptions = computed(() => [
+  ...activeConnections.value.map(c => ({
+    label: `${c.config.port_name} (Serial)`,
     value: c.connection_id,
-  }))
-)
+  })),
+  ...networkActiveConnections.value.map(c => ({
+    label: `${c.config.protocol.toUpperCase()} ${c.config.host}:${c.config.port} (Network)`,
+    value: c.connection_id,
+  })),
+])
 
 // 多通道数据存储
 interface ChannelData {
@@ -589,7 +594,7 @@ onUnmounted(() => {
         <NSelect
           v-model:value="chartConnectionId"
           :options="connectionOptions"
-          placeholder="选择串口连接"
+          :placeholder="t('chart.selectConnection')"
           size="small"
           clearable
         />

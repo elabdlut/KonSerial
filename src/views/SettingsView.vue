@@ -8,12 +8,14 @@ import {
 import {
   ColorPaletteOutline,
   SaveOutline, RefreshOutline, InformationCircleOutline,
-  ServerOutline, ShieldCheckmarkOutline
+  ServerOutline, ShieldCheckmarkOutline, GlobeOutline
 } from '@vicons/ionicons5'
 import { loadConfig } from '@/stores/config'
 import {
   themeSetting, fontSize, language,
   autoSave, saveInterval, maxBufferSize,
+  networkProtocol, networkHost, networkPort,
+  networkAutoReconnect, networkReconnectInterval, networkMaxReconnectAttempts,
   persistSettings
 } from '@/stores/settings'
 import { t } from '@/stores/i18n'
@@ -39,6 +41,15 @@ const fontSizeOptions = computed(() => [
   { label: t('settings.fontXLarge'), value: 18 },
 ])
 
+const networkProtocolOptions = [
+  { label: 'TCP', value: 'tcp' },
+  { label: 'UDP', value: 'udp' },
+  { label: 'WebSocket', value: 'ws' },
+  { label: 'MQTT', value: 'mqtt' },
+  { label: t('network.tcpServer'), value: 'tcp_server' },
+  { label: t('network.udpServer'), value: 'udp_server' },
+]
+
 const handleSave = async () => {
   try {
     await persistSettings()
@@ -55,6 +66,12 @@ const handleReset = () => {
   autoSave.value = true
   saveInterval.value = 60
   maxBufferSize.value = 10000
+  networkProtocol.value = 'tcp'
+  networkHost.value = '127.0.0.1'
+  networkPort.value = 8080
+  networkAutoReconnect.value = false
+  networkReconnectInterval.value = 1000
+  networkMaxReconnectAttempts.value = 3
   message.info(t('settings.resetDone'))
 }
 
@@ -167,6 +184,99 @@ onMounted(async () => {
                 :min="1000"
                 :max="100000"
                 :step="1000"
+                style="width: 120px"
+              />
+            </div>
+          </div>
+        </section>
+
+        <!-- 网络默认配置 -->
+        <section class="settings-section">
+          <div class="section-header">
+            <NIcon :component="GlobeOutline" size="20" />
+            <span>{{ t('settings.network') || '网络' }}</span>
+          </div>
+
+          <div class="settings-card">
+            <div class="setting-item">
+              <div class="setting-info">
+                <label>{{ t('settings.networkProtocol') || '默认协议' }}</label>
+                <p>{{ t('settings.networkProtocolDesc') || '新建网络标签页时的默认协议' }}</p>
+              </div>
+              <NSelect
+                v-model:value="networkProtocol"
+                :options="networkProtocolOptions"
+                style="width: 150px"
+              />
+            </div>
+
+            <NDivider />
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label>{{ t('settings.networkHost') || '默认主机' }}</label>
+                <p>{{ t('settings.networkHostDesc') || '新建网络标签页时的默认主机地址' }}</p>
+              </div>
+              <NInput
+                v-model:value="networkHost"
+                placeholder="127.0.0.1"
+                style="width: 150px"
+              />
+            </div>
+
+            <NDivider />
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label>{{ t('settings.networkPort') || '默认端口' }}</label>
+                <p>{{ t('settings.networkPortDesc') || '新建网络标签页时的默认端口' }}</p>
+              </div>
+              <NInputNumber
+                v-model:value="networkPort"
+                :min="1"
+                :max="65535"
+                style="width: 120px"
+              />
+            </div>
+
+            <NDivider />
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label>{{ t('serial.autoReconnect') }}</label>
+                <p>{{ t('settings.networkAutoReconnectDesc') || '网络连接断开后是否自动重连' }}</p>
+              </div>
+              <NSwitch v-model:value="networkAutoReconnect" />
+            </div>
+
+            <NDivider />
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label>{{ t('serial.reconnectInterval') }}</label>
+                <p>{{ t('settings.networkReconnectIntervalDesc') || '自动重连的时间间隔' }}</p>
+              </div>
+              <NInputNumber
+                v-model:value="networkReconnectInterval"
+                :min="100"
+                :step="100"
+                :disabled="!networkAutoReconnect"
+                style="width: 120px"
+              />
+            </div>
+
+            <NDivider />
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label>{{ t('serial.maxReconnectAttempts') }}</label>
+                <p>{{ t('settings.networkMaxReconnectDesc') || '自动重连的最大尝试次数' }}</p>
+              </div>
+              <NInputNumber
+                v-model:value="networkMaxReconnectAttempts"
+                :min="1"
+                :max="20"
+                :disabled="!networkAutoReconnect"
                 style="width: 120px"
               />
             </div>

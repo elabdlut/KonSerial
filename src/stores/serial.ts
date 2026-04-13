@@ -1,5 +1,5 @@
 // 串口状态管理（多连接架构 + 标签页支持）
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { appConfig } from './config'
@@ -15,6 +15,9 @@ export interface SerialPortConfig {
   parity: string
   flow_control: string
   timeout_ms: number
+  auto_reconnect?: boolean
+  reconnect_interval_ms?: number
+  max_reconnect_attempts?: number
 }
 
 /** 串口状态枚举 */
@@ -105,6 +108,74 @@ export function getPortDisplayName(port: PortInfo): string {
 
 /** 所有活跃连接 */
 export const activeConnections = computed(() => globalInfo.value?.active_connections || [])
+
+// 自动重连状态跟踪
+const reconnectingIds = new Set<string>()
+const reconnectAttemptCounts: Record<string, number> = {}
+
+watch(
+  activeConnections,
+  (conns) => {
+    for (const conn of conns) {
+      if (typeof conn.status !== 'string') {
+        // 是 Error 对象
+        const config = conn.config
+        if (config.auto_reconnect && !reconnectingIds.has(conn.connection_id)) {
+          const maxAttempts = config.max_reconnect_attempts || 3
+          const intervalMs = config.reconnect_interval_ms || 1000
+          reconnectAttemptCounts[conn.connection_id] = reconnectAttemptCounts[conn.connection_id] || 0
+
+          if (reconnectAttemptCounts[conn.connection_id] >= maxAttempts) {
+            continue
+          }
+
+          reconnectingIds.add(conn.connection_id)
+          setTimeout(() => {
+            reconnectingIds.delete(conn.connection_id)
+            const latest = activeConnections.value.find(
+              (c) => c.connection_id === conn.connection_id
+            )
+            if (
+              latest &&
+              typeof latest.status !== 'string' &&
+              latest.config.auto_reconnect
+            ) {
+              reconnectAttemptCounts[conn.connection_id]++
+              const time = new Date().toLocaleTimeString('zh-CN', {
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              })
+              addConnectionLog(conn.connection_id, {
+                type: 'system',
+                content: `自动重连第 ${reconnectAttemptCounts[conn.connection_id]}/${maxAttempts} 次...`,
+                time,
+              })
+              openSerialPort(conn.connection_id, latest.config).catch((e) => {
+                const errTime = new Date().toLocaleTimeString('zh-CN', {
+                  hour12: false,
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                })
+                addConnectionLog(conn.connection_id, {
+                  type: 'error',
+                  content: `自动重连失败: ${e}`,
+                  time: errTime,
+                })
+              })
+            }
+          }, intervalMs)
+        }
+      } else if (conn.status === 'Connected') {
+        // 连接成功时重置计数
+        delete reconnectAttemptCounts[conn.connection_id]
+      }
+    }
+  },
+  { deep: true }
+)
 
 /** 当前选中的连接 ID（用于图表/脚本等默认目标） */
 export const currentConnectionId = ref<string | null>(null)
@@ -539,6 +610,42 @@ export async function sendDataToCurrent(
     throw new Error('没有活跃的串口连接')
   }
   return sendData(currentConnectionId.value, data, isHex)
+}
+
+/** 发送数据到指定连接（带 CRC/校验和） */
+export async function sendDataWithCrc(
+  connectionId: string,
+  data: string,
+  isHex: boolean = false,
+  crcAlgorithm: string = 'modbus'
+): Promise<number> {
+  try {
+    let bytes: number[]
+    if (isHex) {
+      bytes = data.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || []
+    } else {
+      bytes = Array.from(new TextEncoder().encode(data))
+    }
+
+    const sentBytes = await invoke<number>('send_serial_data_with_crc', {
+      connectionId,
+      data: bytes,
+      crcAlgorithm,
+    })
+
+    const time = new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    addConnectionLog(connectionId, {
+      type: 'tx',
+      content: `${data} [CRC:${crcAlgorithm.toUpperCase()}]`,
+      time,
+    })
+
+    await updateGlobalInfo()
+    return sentBytes
+  } catch (error) {
+    console.error('发送数据（带CRC）失败:', error)
+    throw error
+  }
 }
 
 /** 发送文件到指定连接 */

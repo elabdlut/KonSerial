@@ -24,8 +24,12 @@ pub fn default_db_path() -> PathBuf {
 pub struct SessionInfo {
     pub id: i64,
     pub connection_id: String,
+    pub session_type: String, // "serial", "tcp", "udp", "ws", "mqtt"
     pub port_name: String,
     pub baud_rate: u32,
+    pub protocol: String,
+    pub host: String,
+    pub port: u16,
     pub started_at: String,
     pub ended_at: Option<String>,
     pub rx_bytes: u64,
@@ -81,13 +85,26 @@ impl DataLogger {
         )
         .map_err(|e| format!("设置 PRAGMA 失败: {}", e))?;
 
-        // 创建表结构
+        // 创建/迁移表结构
+        Self::migrate_schema(&conn)?;
+
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    fn migrate_schema(conn: &Connection) -> Result<(), String> {
+        // 尝试创建新 sessions 表（如果不存在）
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS sessions (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 connection_id TEXT    NOT NULL,
-                port_name     TEXT    NOT NULL,
-                baud_rate     INTEGER NOT NULL,
+                session_type  TEXT    NOT NULL DEFAULT 'serial',
+                port_name     TEXT    NOT NULL DEFAULT '',
+                baud_rate     INTEGER NOT NULL DEFAULT 0,
+                protocol      TEXT,
+                host          TEXT,
+                port          INTEGER,
                 started_at    DATETIME DEFAULT (datetime('now','localtime')),
                 ended_at      DATETIME
             );
@@ -105,9 +122,26 @@ impl DataLogger {
         )
         .map_err(|e| format!("创建表失败: {}", e))?;
 
-        Ok(Self {
-            conn: Mutex::new(conn),
-        })
+        // 检查旧 schema 是否需要迁移（没有 session_type 列）
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(sessions)")
+            .map_err(|e| e.to_string())?
+            .query_map([], |row| row.get::<_, String>("name"))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+
+        if !cols.contains(&"session_type".to_string()) {
+            conn.execute_batch(
+                "ALTER TABLE sessions ADD COLUMN session_type TEXT NOT NULL DEFAULT 'serial';
+                 ALTER TABLE sessions ADD COLUMN protocol TEXT;
+                 ALTER TABLE sessions ADD COLUMN host TEXT;
+                 ALTER TABLE sessions ADD COLUMN port INTEGER;",
+            )
+            .map_err(|e| format!("迁移 sessions 表失败: {}", e))?;
+        }
+
+        Ok(())
     }
 
     // ========== 会话管理 ==========
@@ -121,14 +155,32 @@ impl DataLogger {
     ) -> Result<i64, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT INTO sessions (connection_id, port_name, baud_rate) VALUES (?1, ?2, ?3)",
+            "INSERT INTO sessions (connection_id, session_type, port_name, baud_rate) VALUES (?1, 'serial', ?2, ?3)",
             params![connection_id, port_name, baud_rate],
         )
         .map_err(|e| format!("创建会话失败: {}", e))?;
         Ok(conn.last_insert_rowid())
     }
 
-    /// 结束会话（关闭串口时调用）
+    /// 创建网络连接的数据记录会话
+    pub fn create_network_session(
+        &self,
+        connection_id: &str,
+        session_type: &str,
+        protocol: &str,
+        host: &str,
+        port: u16,
+    ) -> Result<i64, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO sessions (connection_id, session_type, protocol, host, port) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![connection_id, session_type, protocol, host, port],
+        )
+        .map_err(|e| format!("创建网络会话失败: {}", e))?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// 结束会话（关闭连接时调用）
     pub fn end_session(&self, session_id: i64) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
@@ -141,7 +193,7 @@ impl DataLogger {
 
     // ========== 数据写入 ==========
 
-    /// 记录接收数据（从 read_loop 调用，已在独立线程中）
+    /// 记录接收数据
     pub fn log_rx(&self, session_id: i64, data: &[u8]) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
@@ -170,7 +222,8 @@ impl DataLogger {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT s.id, s.connection_id, s.port_name, s.baud_rate,
+                "SELECT s.id, s.connection_id, s.session_type, s.port_name, s.baud_rate,
+                        s.protocol, s.host, s.port,
                         s.started_at, s.ended_at,
                         COALESCE(SUM(CASE WHEN d.direction='RX' THEN length(d.data) ELSE 0 END),0),
                         COALESCE(SUM(CASE WHEN d.direction='TX' THEN length(d.data) ELSE 0 END),0)
@@ -186,12 +239,16 @@ impl DataLogger {
                 Ok(SessionInfo {
                     id: row.get(0)?,
                     connection_id: row.get(1)?,
-                    port_name: row.get(2)?,
-                    baud_rate: row.get(3)?,
-                    started_at: row.get(4)?,
-                    ended_at: row.get(5)?,
-                    rx_bytes: row.get::<_, i64>(6)? as u64,
-                    tx_bytes: row.get::<_, i64>(7)? as u64,
+                    session_type: row.get(2).unwrap_or_else(|_| "serial".to_string()),
+                    port_name: row.get(3).unwrap_or_else(|_| "".to_string()),
+                    baud_rate: row.get::<_, u32>(4).unwrap_or(0),
+                    protocol: row.get(5).unwrap_or_else(|_| "".to_string()),
+                    host: row.get(6).unwrap_or_else(|_| "".to_string()),
+                    port: row.get::<_, u16>(7).unwrap_or(0),
+                    started_at: row.get(8)?,
+                    ended_at: row.get(9)?,
+                    rx_bytes: row.get::<_, i64>(10)? as u64,
+                    tx_bytes: row.get::<_, i64>(11)? as u64,
                 })
             })
             .map_err(|e| e.to_string())?;

@@ -1,55 +1,53 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import {
-  NButton, NSelect, NSpace, NInput, NInputNumber, NTag, NIcon, NTooltip, NSwitch,
-  NScrollbar, NDivider, NInputGroup, NCheckboxGroup, NCheckbox,
+  NButton, NSelect, NSpace, NInput, NInputNumber,
+  NIcon, NSwitch, NScrollbar, NDivider, NTag,
+  NCheckboxGroup, NCheckbox,
   useMessage
 } from 'naive-ui'
 import {
-  RefreshOutline, FlashOutline, CloseOutline, SendOutline,
-  TrashOutline, SettingsOutline, PulseOutline, SwapHorizontalOutline,
-  DocumentOutline
+  FlashOutline, CloseOutline, SendOutline,
+  TrashOutline, SettingsOutline, SwapHorizontalOutline,
+  GlobeOutline, DocumentOutline
 } from '@vicons/ionicons5'
 import {
-  availablePorts,
-  refreshPorts as doRefreshPorts,
-  openSerialPort,
-  closeSerialPort,
-  sendData,
-  sendDataWithCrc,
-  sendFile,
-  generateConnectionId,
-  getPortDisplayName,
+  openNetworkConnection,
+  closeNetworkConnection,
+  sendNetworkData,
+  sendNetworkFile,
   activeConnections,
   getConnectionLog,
   addConnectionLog,
   clearConnectionLog,
   getConnectionDisplay,
   setConnectionDisplay,
-  type SerialPortConfig,
-} from '@/stores/serial'
-import { open as openDialog } from '@tauri-apps/plugin-dialog'
-import { readFile } from '@tauri-apps/plugin-fs'
+  generateConnectionId,
+  connectionPeers,
+  selectedPeer,
+  type NetConnectionConfig,
+} from '@/stores/network'
 import { t } from '@/stores/i18n'
 import { appConfig, saveConfig } from '@/stores/config'
 import type { QuickCommand } from '@/stores/config'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import { readFile } from '@tauri-apps/plugin-fs'
 
 const props = defineProps<{
   tabId: string
   connectionId: string | null
-  config: SerialPortConfig
+  config: NetConnectionConfig
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:config', value: SerialPortConfig): void
-  (e: 'connect', config: SerialPortConfig, connectionId: string): void
+  (e: 'update:config', value: NetConnectionConfig): void
+  (e: 'connect', config: NetConnectionConfig, connectionId: string): void
   (e: 'disconnect'): void
 }>()
 
 const message = useMessage()
 
-// 本地可编辑配置副本
-const localConfig = ref<SerialPortConfig>({ ...props.config })
+const localConfig = ref<NetConnectionConfig>({ ...props.config })
 
 watch(() => props.config, (newConfig) => {
   localConfig.value = { ...newConfig }
@@ -59,22 +57,10 @@ const onConfigChange = () => {
   emit('update:config', { ...localConfig.value })
 }
 
-// UI 状态
 const loading = ref(false)
 const hexSend = ref(false)
 const sendText = ref('')
-const appendNewline = ref('none')
-const selectedCrc = ref('none')
 
-const crcOptions = [
-  { label: 'None', value: 'none' },
-  { label: 'Modbus', value: 'modbus' },
-  { label: 'XOR-8', value: 'xor8' },
-  { label: 'CRC16-CCITT', value: 'crc16-ccitt' },
-  { label: 'CRC32', value: 'crc32' },
-]
-
-// 显示设置
 const display = computed({
   get: () => getConnectionDisplay(props.connectionId),
   set: (val) => {
@@ -84,17 +70,18 @@ const display = computed({
   }
 })
 
-// 终端引用
 const scrollbarRef = ref()
 
-// 计算属性
 const connectionInfo = computed(() => {
   if (!props.connectionId) return null
   return activeConnections.value.find(c => c.connection_id === props.connectionId) || null
 })
 
-const isConnected = computed(() => {
-  return connectionInfo.value?.status === 'Connected'
+const isServer = computed(() => localConfig.value.protocol.endsWith('_server'))
+
+const isActive = computed(() => {
+  const status = connectionInfo.value?.status
+  return status === 'Connected' || status === 'Listening'
 })
 
 const connectionStats = computed(() => {
@@ -105,7 +92,10 @@ const connectionStats = computed(() => {
   }
 })
 
-// 终端日志过滤
+const terminalLogs = computed(() => {
+  return props.connectionId ? getConnectionLog(props.connectionId) : []
+})
+
 const logFilterText = ref('')
 const logFilterTypes = ref<string[]>(['tx', 'rx', 'system', 'error'])
 
@@ -121,121 +111,84 @@ const filteredTerminalLogs = computed(() => {
   })
 })
 
-const portSelectOpen = ref(false)
-const frozenPortOptions = ref<{ label: string; value: string }[]>([])
-
-const livePortOptions = computed(() =>
-  availablePorts.value.map(p => ({
-    label: getPortDisplayName(p),
-    value: p.port_name
-  }))
-)
-
-const portOptions = computed(() =>
-  portSelectOpen.value ? frozenPortOptions.value : livePortOptions.value
-)
-
-function onPortSelectShow(show: boolean) {
-  if (show) {
-    frozenPortOptions.value = livePortOptions.value
-  }
-  portSelectOpen.value = show
-}
-
-const baudRateOptions = [
-  { label: '9600', value: 9600 },
-  { label: '19200', value: 19200 },
-  { label: '38400', value: 38400 },
-  { label: '57600', value: 57600 },
-  { label: '115200', value: 115200 },
-  { label: '230400', value: 230400 },
-  { label: '460800', value: 460800 },
-  { label: '921600', value: 921600 },
+const protoOptions = [
+  { label: 'TCP', value: 'tcp' },
+  { label: 'UDP', value: 'udp' },
+  { label: 'WebSocket', value: 'ws' },
+  { label: 'MQTT', value: 'mqtt' },
+  { label: t('network.tcpServer'), value: 'tcp_server' },
+  { label: t('network.udpServer'), value: 'udp_server' },
 ]
-
-const dataBitsOptions = computed(() => [
-  { label: t('serial.bits5'), value: 5 },
-  { label: t('serial.bits6'), value: 6 },
-  { label: t('serial.bits7'), value: 7 },
-  { label: t('serial.bits8'), value: 8 },
-])
-
-const stopBitsOptions = computed(() => [
-  { label: t('serial.stop1'), value: 1 },
-  { label: t('serial.stop2'), value: 2 },
-])
-
-const parityOptions = computed(() => [
-  { label: t('serial.parityNone'), value: 'None' },
-  { label: t('serial.parityOdd'), value: 'Odd' },
-  { label: t('serial.parityEven'), value: 'Even' },
-])
 
 const encodingOptions = [
   { label: 'UTF-8', value: 'utf-8' },
   { label: 'GBK', value: 'gbk' },
 ]
 
-const newlineOptions = computed(() => [
-  { label: t('serial.newlineNone'), value: 'none' },
-  { label: 'LF (\\n)', value: '\n' },
-  { label: 'CRLF (\\r\\n)', value: '\r\n' },
-])
+const peers = computed(() => {
+  if (!props.connectionId) return []
+  return connectionPeers.value[props.connectionId] || []
+})
+
+const currentSelectedPeer = computed({
+  get: () => {
+    if (!props.connectionId) return null
+    return selectedPeer.value[props.connectionId] || null
+  },
+  set: (val) => {
+    if (props.connectionId) {
+      selectedPeer.value[props.connectionId] = val
+    }
+  }
+})
 
 const formatHex = (text: string) => {
   const bytes = new TextEncoder().encode(text)
   return Array.from(bytes).map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ')
 }
 
-const terminalLogs = computed(() => {
-  return props.connectionId ? getConnectionLog(props.connectionId) : []
-})
-
-// 刷新串口
-const refreshPorts = async () => {
-  loading.value = true
-  try {
-    await doRefreshPorts()
-    if (availablePorts.value.length > 0 && !localConfig.value.port_name) {
-      localConfig.value.port_name = availablePorts.value[0].port_name
-      onConfigChange()
-    }
-    message.success(t('serial.foundPorts', availablePorts.value.length))
-  } catch (e) {
-    message.error(t('serial.refreshFail', String(e)))
-  } finally {
-    loading.value = false
-  }
-}
-
-// 连接/断开
 const toggleConnection = async () => {
   loading.value = true
   let pendingConnId: string | null = null
   try {
-    if (isConnected.value && props.connectionId) {
-      await closeSerialPort(props.connectionId)
-      addConnectionLog(props.connectionId, {
-        type: 'system',
-        content: t('serial.disconnectedMsg'),
-        time: new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      })
-      message.info(t('serial.portDisconnected'))
+    if (isActive.value && props.connectionId) {
+      await closeNetworkConnection(props.connectionId)
+      if (isServer.value) {
+        addConnectionLog(props.connectionId, {
+          type: 'system',
+          content: t('network.serverStopped'),
+          time: new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        })
+      } else {
+        addConnectionLog(props.connectionId, {
+          type: 'system',
+          content: '网络连接已断开',
+          time: new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        })
+      }
       emit('disconnect')
     } else {
-      if (!localConfig.value.port_name) {
-        message.warning(t('serial.selectFirst'))
+      if (!localConfig.value.host) {
+        message.warning('请输入目标地址')
         return
       }
       pendingConnId = generateConnectionId()
-      await openSerialPort(pendingConnId, { ...localConfig.value })
+      await openNetworkConnection(pendingConnId, { ...localConfig.value })
       emit('connect', { ...localConfig.value }, pendingConnId)
-      addConnectionLog(pendingConnId, {
-        type: 'system',
-        content: t('serial.connectedLog', localConfig.value.port_name, localConfig.value.baud_rate, localConfig.value.data_bits, localConfig.value.parity[0], localConfig.value.stop_bits),
-        time: new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      })
-      message.success(t('serial.connectedMsg'))
+      if (isServer.value) {
+        addConnectionLog(pendingConnId, {
+          type: 'system',
+          content: t('network.serverStarted', localConfig.value.protocol.toUpperCase(), localConfig.value.host, String(localConfig.value.port)),
+          time: new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        })
+      } else {
+        addConnectionLog(pendingConnId, {
+          type: 'system',
+          content: `已连接 ${localConfig.value.protocol.toUpperCase()}://${localConfig.value.host}:${localConfig.value.port}`,
+          time: new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        })
+        message.success('网络连接成功')
+      }
     }
   } catch (e) {
     const errConnId = props.connectionId || pendingConnId
@@ -246,28 +199,20 @@ const toggleConnection = async () => {
         time: new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       })
     }
-    message.error(t('serial.operationFail', String(e)))
+    message.error(`操作失败: ${String(e)}`)
   } finally {
     loading.value = false
   }
 }
 
-// 发送
 const handleSend = async () => {
   if (!sendText.value.trim() || !props.connectionId) return
   try {
-    let textToSend = sendText.value
-    if (!hexSend.value && appendNewline.value !== 'none') {
-      textToSend += appendNewline.value
-    }
-    if (selectedCrc.value !== 'none') {
-      await sendDataWithCrc(props.connectionId, textToSend, hexSend.value, selectedCrc.value)
-    } else {
-      await sendData(props.connectionId, textToSend, hexSend.value)
-    }
+    const peerId = isServer.value ? (currentSelectedPeer.value || undefined) : undefined
+    await sendNetworkData(props.connectionId, sendText.value, hexSend.value, peerId)
     sendText.value = ''
   } catch (e) {
-    message.error(t('serial.sendFail', String(e)))
+    message.error(`发送失败: ${String(e)}`)
   }
 }
 
@@ -277,7 +222,8 @@ const handleSendFile = async () => {
     const selected = await openDialog({ multiple: false })
     if (!selected) return
     const bytes = await readFile(selected as string)
-    const sent = await sendFile(props.connectionId, bytes)
+    const peerId = isServer.value ? (currentSelectedPeer.value || undefined) : undefined
+    const sent = await sendNetworkFile(props.connectionId, bytes, peerId)
     message.success(t('serial.fileSent', sent))
   } catch (e) {
     message.error(t('serial.fileSendFail', String(e)))
@@ -288,16 +234,12 @@ const handleSendFile = async () => {
 const quickCmdForm = ref({ name: '', content: '', isHex: false })
 const showQuickCmdForm = ref(false)
 
-const quickCommands = computed(() => appConfig.value?.serial?.quick_commands || [])
+const quickCommands = computed(() => appConfig.value?.network?.quick_commands || [])
 
 const handleQuickSend = async (cmd: QuickCommand) => {
   if (!props.connectionId) return
   try {
-    let textToSend = cmd.content
-    if (!cmd.is_hex && cmd.append_newline && cmd.append_newline !== 'none') {
-      textToSend += cmd.append_newline
-    }
-    await sendData(props.connectionId, textToSend, cmd.is_hex)
+    await sendNetworkData(props.connectionId, cmd.content, cmd.is_hex)
   } catch (e) {
     message.error(t('serial.sendFail', String(e)))
   }
@@ -305,15 +247,15 @@ const handleQuickSend = async (cmd: QuickCommand) => {
 
 const addQuickCommand = async () => {
   if (!quickCmdForm.value.name.trim() || !quickCmdForm.value.content.trim()) return
-  const list = appConfig.value?.serial?.quick_commands || []
+  const list = appConfig.value?.network?.quick_commands || []
   list.push({
     name: quickCmdForm.value.name.trim(),
     content: quickCmdForm.value.content,
     is_hex: quickCmdForm.value.isHex,
-    append_newline: appendNewline.value,
+    append_newline: 'none',
   })
   if (appConfig.value) {
-    appConfig.value.serial.quick_commands = [...list]
+    appConfig.value.network.quick_commands = [...list]
     await saveConfig()
   }
   quickCmdForm.value = { name: '', content: '', isHex: false }
@@ -321,10 +263,10 @@ const addQuickCommand = async () => {
 }
 
 const removeQuickCommand = async (index: number) => {
-  const list = appConfig.value?.serial?.quick_commands || []
+  const list = appConfig.value?.network?.quick_commands || []
   list.splice(index, 1)
   if (appConfig.value) {
-    appConfig.value.serial.quick_commands = [...list]
+    appConfig.value.network.quick_commands = [...list]
     await saveConfig()
   }
 }
@@ -335,7 +277,6 @@ const clearLog = () => {
   }
 }
 
-// 自动滚动到底部
 watch(() => filteredTerminalLogs.value.length, () => {
   if (display.value.autoScroll) {
     nextTick(() => {
@@ -350,13 +291,19 @@ watch(() => filteredTerminalLogs.value.length, () => {
     <!-- 左侧配置区 -->
     <aside class="config-panel">
       <div class="status-section">
-        <div class="status-indicator" :class="{ connected: isConnected }">
+        <div class="status-indicator" :class="{ connected: isActive }">
           <div class="status-dot"></div>
-          <span class="status-text">{{ isConnected ? t('serial.connected') : t('serial.disconnected') }}</span>
+          <span class="status-text">{{
+            connectionInfo?.status === 'Listening'
+              ? t('network.listening')
+              : isActive
+                ? t('network.connected')
+                : t('network.disconnected')
+          }}</span>
         </div>
-        <div v-if="isConnected && connectionInfo" class="connection-info">
-          <span>{{ connectionInfo.config.port_name }}</span>
-          <span class="baud">{{ connectionInfo.config.baud_rate }} bps</span>
+        <div v-if="isActive && connectionInfo" class="connection-info">
+          <span>{{ connectionInfo.config.protocol.toUpperCase() }}</span>
+          <span class="host">{{ connectionInfo.config.host }}:{{ connectionInfo.config.port }}</span>
         </div>
       </div>
 
@@ -365,138 +312,96 @@ watch(() => filteredTerminalLogs.value.length, () => {
       <div class="config-section">
         <div class="section-title">
           <NIcon :component="SettingsOutline" size="16" />
-          <span>{{ t('serial.config') }}</span>
+          <span>网络配置</span>
         </div>
 
         <div class="config-item">
-          <label>{{ t('serial.port') }}</label>
-          <NInputGroup>
-            <NSelect
-              v-model:value="localConfig.port_name"
-              :options="portOptions"
-              :disabled="isConnected"
-              :virtual-scroll="false"
-              :placeholder="t('serial.selectPort')"
-              size="small"
-              style="flex: 1"
-              @update:show="onPortSelectShow"
-              @update:value="onConfigChange"
-            />
-            <NTooltip>
-              <template #trigger>
-                <NButton
-                  size="small"
-                  :loading="loading"
-                  :disabled="isConnected"
-                  @click="refreshPorts"
-                >
-                  <template #icon>
-                    <NIcon :component="RefreshOutline" />
-                  </template>
-                </NButton>
-              </template>
-              {{ t('serial.refreshPorts') }}
-            </NTooltip>
-          </NInputGroup>
-        </div>
-
-        <div class="config-item">
-          <label>{{ t('serial.baudRate') }}</label>
+          <label>{{ t('network.protocol') }}</label>
           <NSelect
-            v-model:value="localConfig.baud_rate"
-            :options="baudRateOptions"
-            :disabled="isConnected"
+            v-model:value="localConfig.protocol"
+            :options="protoOptions"
+            :disabled="isActive"
             size="small"
             @update:value="onConfigChange"
           />
         </div>
 
-        <div class="config-row">
-          <div class="config-item half">
-            <label>{{ t('serial.dataBits') }}</label>
-            <NSelect
-              v-model:value="localConfig.data_bits"
-              :options="dataBitsOptions"
-              :disabled="isConnected"
-              size="small"
-              @update:value="onConfigChange"
-            />
-          </div>
-          <div class="config-item half">
-            <label>{{ t('serial.stopBits') }}</label>
-            <NSelect
-              v-model:value="localConfig.stop_bits"
-              :options="stopBitsOptions"
-              :disabled="isConnected"
-              size="small"
-              @update:value="onConfigChange"
-            />
-          </div>
-        </div>
-
         <div class="config-item">
-          <label>{{ t('serial.parity') }}</label>
-          <NSelect
-            v-model:value="localConfig.parity"
-            :options="parityOptions"
-            :disabled="isConnected"
+          <label>{{ t('network.host') }}</label>
+          <NInput
+            v-model:value="localConfig.host"
+            :disabled="isActive"
+            placeholder="127.0.0.1"
             size="small"
             @update:value="onConfigChange"
           />
         </div>
 
-        <NDivider style="margin: 16px 0 12px" />
-
-        <div class="config-item" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-          <NSwitch v-model:value="localConfig.auto_reconnect" size="small" @update:value="onConfigChange" />
-          <span style="font-size: 13px;">{{ t('serial.autoReconnect') }}</span>
+        <div class="config-item">
+          <label>{{ t('network.port') }}</label>
+          <NInputNumber
+            v-model:value="localConfig.port"
+            :min="1"
+            :max="65535"
+            :disabled="isActive"
+            size="small"
+            @update:value="onConfigChange"
+          />
         </div>
-        <div v-if="localConfig.auto_reconnect" class="config-row">
-          <div class="config-item half">
-            <label style="font-size: 12px;">{{ t('serial.reconnectInterval') }}</label>
-            <NInputNumber
-              v-model:value="localConfig.reconnect_interval_ms"
-              :min="100"
-              :step="100"
-              :disabled="isConnected"
-              size="small"
-              @update:value="onConfigChange"
-            />
-          </div>
-          <div class="config-item half">
-            <label style="font-size: 12px;">{{ t('serial.maxReconnectAttempts') }}</label>
-            <NInputNumber
-              v-model:value="localConfig.max_reconnect_attempts"
-              :min="1"
-              :max="20"
-              :disabled="isConnected"
-              size="small"
-              @update:value="onConfigChange"
-            />
-          </div>
+
+        <div v-if="isServer && isActive && peers.length > 0" class="config-item">
+          <label>{{ t('network.targetPeer') }}</label>
+          <NSelect
+            v-model:value="currentSelectedPeer"
+            :options="peers.map(p => ({ label: p, value: p }))"
+            :placeholder="t('network.selectPeer')"
+            size="small"
+          />
+        </div>
+
+        <div v-if="localConfig.protocol === 'ws'" class="config-item">
+          <label>{{ t('network.path') }}</label>
+          <NInput
+            v-model:value="localConfig.path"
+            :disabled="isActive"
+            placeholder="/ws"
+            size="small"
+            @update:value="onConfigChange"
+          />
+        </div>
+
+        <div v-if="localConfig.protocol === 'mqtt'" class="config-item">
+          <label>{{ t('network.topic') }}</label>
+          <NInput
+            v-model:value="localConfig.topic"
+            :disabled="isActive"
+            placeholder="test/topic"
+            size="small"
+            @update:value="onConfigChange"
+          />
         </div>
       </div>
 
       <NButton
-        :type="isConnected ? 'error' : 'primary'"
+        :type="isActive ? 'error' : 'primary'"
         :loading="loading"
-        :disabled="!localConfig.port_name && !isConnected"
+        :disabled="!localConfig.host && !isActive"
         block
         size="large"
         @click="toggleConnection"
         style="margin-top: 20px"
       >
         <template #icon>
-          <NIcon :component="isConnected ? CloseOutline : FlashOutline" />
+          <NIcon :component="isActive ? CloseOutline : FlashOutline" />
         </template>
-        {{ isConnected ? t('serial.disconnect') : t('serial.connect') }}
+        {{ isActive ? t('network.disconnect') : t('network.connect') }}
       </NButton>
 
-      <div v-if="isConnected" class="stats-section">
+      <div v-if="isActive" class="stats-section">
         <NDivider style="margin: 20px 0 16px" />
         <div class="section-title">
-          <NIcon :component="PulseOutline" size="16" />
-          <span>{{ t('serial.statistics') }}</span>
+          <NIcon :component="GlobeOutline" size="16" />
+          <span>数据统计</span>
         </div>
         <div class="stats-grid">
           <div class="stat-item">
@@ -517,7 +422,7 @@ watch(() => filteredTerminalLogs.value.length, () => {
         <div class="terminal-header">
           <div class="terminal-title">
             <NIcon :component="SwapHorizontalOutline" size="18" />
-            <span>{{ t('serial.terminal') }}</span>
+            <span>{{ t('network.terminal') }}</span>
             <NTag size="small" :bordered="false" type="info">{{ terminalLogs.length }}</NTag>
           </div>
           <NSpace align="center" :size="8">
@@ -529,15 +434,15 @@ watch(() => filteredTerminalLogs.value.length, () => {
             />
             <NSwitch v-model:value="display.hexDisplay" size="small">
               <template #checked>HEX</template>
-              <template #unchecked>{{ t('serial.text') }}</template>
+              <template #unchecked>文本</template>
             </NSwitch>
             <NSwitch v-model:value="display.autoScroll" size="small">
-              <template #checked>{{ t('serial.scroll') }}</template>
-              <template #unchecked>{{ t('serial.scroll') }}</template>
+              <template #checked>滚动</template>
+              <template #unchecked>滚动</template>
             </NSwitch>
             <NButton size="small" quaternary @click="clearLog">
               <template #icon><NIcon :component="TrashOutline" /></template>
-              {{ t('serial.clear') }}
+              {{ t('network.clear') }}
             </NButton>
           </NSpace>
         </div>
@@ -579,7 +484,7 @@ watch(() => filteredTerminalLogs.value.length, () => {
             </div>
             <div v-if="filteredTerminalLogs.length === 0" class="terminal-empty">
               <NIcon :component="SwapHorizontalOutline" size="40" />
-              <p>{{ t('serial.emptyHint') }}</p>
+              <p>{{ t('network.emptyHint') }}</p>
             </div>
           </div>
         </NScrollbar>
@@ -589,22 +494,9 @@ watch(() => filteredTerminalLogs.value.length, () => {
         <div class="send-options">
           <NSpace align="center" :size="12">
             <NSwitch v-model:value="hexSend" size="small">
-              <template #checked>{{ t('serial.hexSend') }}</template>
-              <template #unchecked>{{ t('serial.textSend') }}</template>
+              <template #checked>{{ t('network.hexSend') }}</template>
+              <template #unchecked>{{ t('network.textSend') }}</template>
             </NSwitch>
-            <NSelect
-              v-if="!hexSend"
-              v-model:value="appendNewline"
-              :options="newlineOptions"
-              size="small"
-              style="width: 120px"
-            />
-            <NSelect
-              v-model:value="selectedCrc"
-              :options="crcOptions"
-              size="small"
-              style="width: 120px"
-            />
           </NSpace>
         </div>
 
@@ -617,7 +509,7 @@ watch(() => filteredTerminalLogs.value.length, () => {
               size="tiny"
               quaternary
               type="info"
-              :disabled="!isConnected"
+              :disabled="!isActive"
               @click="handleQuickSend(cmd)"
             >
               {{ cmd.name }}
@@ -654,21 +546,21 @@ watch(() => filteredTerminalLogs.value.length, () => {
         <div class="send-input">
           <NInput
             v-model:value="sendText"
-            :disabled="!isConnected"
-            :placeholder="hexSend ? t('serial.hexPlaceholder') : t('serial.textPlaceholder')"
+            :disabled="!isActive || (isServer && peers.length > 0 && !currentSelectedPeer)"
+            :placeholder="hexSend ? '输入十六进制数据，如: 01 02 03 FF' : '输入要发送的数据...'"
             @keydown.enter="handleSend"
             clearable
           />
           <NButton
             type="primary"
-            :disabled="!isConnected || !sendText.trim()"
+            :disabled="!isActive || !sendText.trim() || (isServer && peers.length > 0 && !currentSelectedPeer)"
             @click="handleSend"
           >
             <template #icon><NIcon :component="SendOutline" /></template>
-            {{ t('serial.send') }}
+            {{ t('network.send') }}
           </NButton>
           <NButton
-            :disabled="!isConnected"
+            :disabled="!isActive || (isServer && peers.length > 0 && !currentSelectedPeer)"
             @click="handleSendFile"
           >
             <template #icon><NIcon :component="DocumentOutline" /></template>
@@ -688,7 +580,6 @@ watch(() => filteredTerminalLogs.value.length, () => {
   min-width: 0;
 }
 
-/* 左侧配置面板 */
 .config-panel {
   width: 280px;
   flex-shrink: 0;
@@ -754,11 +645,10 @@ watch(() => filteredTerminalLogs.value.length, () => {
   gap: 8px;
 }
 
-.connection-info .baud {
+.connection-info .host {
   color: var(--text-muted);
 }
 
-/* 配置区 */
 .config-section {
   flex: 1;
 }
@@ -784,16 +674,6 @@ watch(() => filteredTerminalLogs.value.length, () => {
   margin-bottom: 6px;
 }
 
-.config-row {
-  display: flex;
-  gap: 12px;
-}
-
-.config-item.half {
-  flex: 1;
-}
-
-/* 统计 */
 .stats-section {
   margin-top: auto;
 }
@@ -827,7 +707,6 @@ watch(() => filteredTerminalLogs.value.length, () => {
 .stat-value.tx { color: #1976d2; }
 .stat-value.rx { color: #388e3c; }
 
-/* 右侧主区域 */
 .main-area {
   flex: 1;
   display: flex;
@@ -836,7 +715,6 @@ watch(() => filteredTerminalLogs.value.length, () => {
   min-width: 0;
 }
 
-/* 终端区域 */
 .terminal-section {
   flex: 1;
   background: var(--bg-terminal);
@@ -853,15 +731,6 @@ watch(() => filteredTerminalLogs.value.length, () => {
   align-items: center;
   padding: 12px 16px;
   background: #252526;
-  border-bottom: 1px solid #333;
-}
-
-.terminal-filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  background: #1e1e1e;
   border-bottom: 1px solid #333;
 }
 
@@ -928,7 +797,6 @@ watch(() => filteredTerminalLogs.value.length, () => {
   font-size: var(--font-base);
 }
 
-/* 发送区域 */
 .send-section {
   background: var(--bg-card);
   border-radius: 12px;
@@ -949,7 +817,15 @@ watch(() => filteredTerminalLogs.value.length, () => {
   flex: 1;
 }
 
-/* 快捷命令 */
+.terminal-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #1e1e1e;
+  border-bottom: 1px solid #333;
+}
+
 .quick-commands-bar {
   margin-bottom: 12px;
 }

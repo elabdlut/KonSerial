@@ -3,6 +3,13 @@ import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 
 // 配置接口定义
+export interface QuickCommand {
+  name: string
+  content: string
+  is_hex: boolean
+  append_newline: string
+}
+
 interface SerialConfig {
   port: string
   baud_rate: number
@@ -11,6 +18,10 @@ interface SerialConfig {
   parity: string
   flow_control: string
   timeout_ms: number
+  quick_commands: QuickCommand[]
+  auto_reconnect: boolean
+  reconnect_interval_ms: number
+  max_reconnect_attempts: number
 }
 
 interface UiConfig {
@@ -29,10 +40,21 @@ interface DataConfig {
   data_format: string
 }
 
+interface NetworkConfig {
+  protocol: string
+  host: string
+  port: number
+  auto_reconnect: boolean
+  reconnect_interval_ms: number
+  max_reconnect_attempts: number
+  quick_commands: QuickCommand[]
+}
+
 export interface AppConfig {
   serial: SerialConfig
   ui: UiConfig
   data: DataConfig
+  network: NetworkConfig
 }
 
 // 全局配置状态（前端管理）

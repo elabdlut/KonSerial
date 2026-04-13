@@ -20,6 +20,12 @@ const router = createRouter({
       meta: { title: '波形图' }
     },
     {
+      path: '/network',
+      name: 'Network',
+      component: () => import('../views/NetworkView.vue'),
+      meta: { title: '网络调试' }
+    },
+    {
       path: '/script',
       name: 'Script',
       component: () => import('../views/ScriptView.vue'),

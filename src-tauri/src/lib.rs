@@ -11,6 +11,7 @@ use crate::utils::config::{AppConfig, default_config_path};
 use crate::utils::logger::{Logger, LoggerConfig};
 use crate::serial::port_manager::PortManager;
 use crate::data_logger::{DataLogger, default_db_path};
+use crate::network::manager::NetworkManager;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -42,6 +43,9 @@ pub fn run() {
     // 初始化串口管理器（注入 DataLogger）
     let port_manager = Arc::new(Mutex::new(PortManager::new(data_logger.clone())));
 
+    // 初始化网络连接管理器（注入 DataLogger）
+    let network_manager = Arc::new(Mutex::new(NetworkManager::new(data_logger.clone())));
+
     log_info!("应用启动成功");
 
     tauri::Builder::default()
@@ -53,6 +57,7 @@ pub fn run() {
         // 注册全局状态
         .manage(port_manager)
         .manage(data_logger)
+        .manage(network_manager)
         .invoke_handler(tauri::generate_handler![
             // 基础命令
             greet,
@@ -71,8 +76,17 @@ pub fn run() {
             crate::serial::commands::get_all_connections,
             crate::serial::commands::get_global_runtime_info,
             crate::serial::commands::send_serial_data,
+            crate::serial::commands::send_serial_data_with_crc,
             crate::serial::commands::send_serial_file,
             crate::serial::commands::is_serial_connected,
+            // 网络调试命令
+            crate::network::commands::open_network_connection,
+            crate::network::commands::close_network_connection,
+            crate::network::commands::close_all_network_connections,
+            crate::network::commands::send_network_data,
+            crate::network::commands::get_network_connection_info,
+            crate::network::commands::get_all_network_connections,
+            crate::network::commands::get_network_global_info,
             // 数据日志命令
             crate::data_logger::commands::get_sessions,
             crate::data_logger::commands::get_session_data,

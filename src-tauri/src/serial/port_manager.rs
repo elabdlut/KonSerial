@@ -23,6 +23,12 @@ pub struct SerialPortConfig {
     pub parity: String,       // "None", "Odd", "Even"
     pub flow_control: String, // "None", "Software", "Hardware"
     pub timeout_ms: u64,
+    #[serde(default)]
+    pub auto_reconnect: bool,
+    #[serde(default)]
+    pub reconnect_interval_ms: u64,
+    #[serde(default)]
+    pub max_reconnect_attempts: u32,
 }
 
 impl SerialPortConfig {
@@ -227,7 +233,7 @@ impl PortManager {
                 
                 let running = Arc::new(AtomicBool::new(true));
                 let bytes_counter = Arc::new(AtomicU64::new(0));
-                
+
                 // 启动后台读取任务
                 let conn_id = connection_id.clone();
                 let running_clone = running.clone();
@@ -235,12 +241,27 @@ impl PortManager {
                 let logger_clone = self.data_logger.clone();
                 let read_task = tokio::task::spawn_blocking(move || {
                     Self::read_loop(
-                        read_port, conn_id, app_handle,
+                        read_port, conn_id, app_handle.clone(),
                         running_clone, counter_clone,
                         logger_clone, session_id,
                     );
                 });
-                
+
+                // 读取循环退出监控：异常断开时更新状态
+                let conn_id_exit = connection_id.clone();
+                let running_exit = running.clone();
+                let connections_clone = self.connections.clone();
+                let exit_task = tokio::spawn(async move {
+                    let _ = read_task.await;
+                    if running_exit.load(Ordering::Relaxed) {
+                        let mut conns = connections_clone.write().await;
+                        if let Some(conn) = conns.get_mut(&conn_id_exit) {
+                            conn.info.status = PortStatus::Error("串口读取异常断开".to_string());
+                            conn.info.last_error = Some("串口读取异常断开".to_string());
+                        }
+                    }
+                });
+
                 let connection = SerialConnection {
                     port: Arc::new(Mutex::new(port)),
                     info: ConnectionInfo {
@@ -252,7 +273,7 @@ impl PortManager {
                         last_error: None,
                         created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                     },
-                    read_task,
+                    read_task: exit_task,
                     running,
                     bytes_received_counter: bytes_counter,
                     session_id,

@@ -1,7 +1,7 @@
 {
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"ls src/views/ && ls src-tauri/src/\",\"description\":\"List views and backend modules\"}",
-  "error": "Exit code 2\nls: cannot access 'src/views/': No such file or directory",
-  "timestamp": "2026-04-05T10:15:21.406Z",
+  "tool_name": "Grep",
+  "tool_input_preview": "{\"pattern\":\"'history.exportFail'\",\"path\":\"/home/sratle/workspace/rust/KonSerial/src/stores/i18n.ts\",\"output_mode\":\"content\",\"-n\":true}",
+  "error": "spawn /home/sratle/.nvm/versions/node/v22.21.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg EACCES",
+  "timestamp": "2026-04-13T06:29:33.807Z",
   "retry_count": 1
 }

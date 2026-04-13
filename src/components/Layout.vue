@@ -9,6 +9,7 @@ const route = useRoute()
 const menuItems = computed(() => [
   { path: '/serial', icon: '🔌', label: t('nav.serial') },
   { path: '/chart', icon: '📊', label: t('nav.chart') },
+  { path: '/network', icon: '🌐', label: t('nav.network') },
   { path: '/script', icon: '📝', label: t('nav.script') },
   { path: '/history', icon: '📜', label: t('nav.history') },
   { path: '/settings', icon: '⚙️', label: t('nav.settings') }

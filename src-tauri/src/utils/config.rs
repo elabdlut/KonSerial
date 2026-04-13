@@ -15,6 +15,19 @@ pub fn default_config_path() -> PathBuf {
     config_dir.join("konserial").join("config.json")
 }
 
+/// 快捷命令
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct QuickCommand {
+    pub name: String,
+    pub content: String,
+    pub is_hex: bool,
+    pub append_newline: String,
+}
+
+fn default_quick_commands() -> Vec<QuickCommand> {
+    Vec::new()
+}
+
 /// 串口配置
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SerialConfig {
@@ -26,10 +39,26 @@ pub struct SerialConfig {
     pub flow_control: String,
     #[serde(default = "default_timeout")]
     pub timeout_ms: u64,
+    #[serde(default = "default_quick_commands")]
+    pub quick_commands: Vec<QuickCommand>,
+    #[serde(default)]
+    pub auto_reconnect: bool,
+    #[serde(default = "default_reconnect_interval")]
+    pub reconnect_interval_ms: u64,
+    #[serde(default = "default_max_reconnect_attempts")]
+    pub max_reconnect_attempts: u32,
 }
 
 fn default_timeout() -> u64 {
     100
+}
+
+fn default_reconnect_interval() -> u64 {
+    1000
+}
+
+fn default_max_reconnect_attempts() -> u32 {
+    3
 }
 
 /// 界面配置
@@ -52,12 +81,42 @@ pub struct DataConfig {
     pub data_format: String,
 }
 
+fn default_network_config() -> NetworkConfig {
+    NetworkConfig {
+        protocol: String::from("tcp"),
+        host: String::from("127.0.0.1"),
+        port: 8080,
+        auto_reconnect: false,
+        reconnect_interval_ms: 1000,
+        max_reconnect_attempts: 3,
+        quick_commands: Vec::new(),
+    }
+}
+
+/// 网络配置
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NetworkConfig {
+    pub protocol: String,
+    pub host: String,
+    pub port: u16,
+    #[serde(default)]
+    pub auto_reconnect: bool,
+    #[serde(default = "default_reconnect_interval")]
+    pub reconnect_interval_ms: u64,
+    #[serde(default = "default_max_reconnect_attempts")]
+    pub max_reconnect_attempts: u32,
+    #[serde(default = "default_quick_commands")]
+    pub quick_commands: Vec<QuickCommand>,
+}
+
 /// 上层结构体
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AppConfig {
     pub serial: SerialConfig,
     pub ui: UiConfig,
     pub data: DataConfig,
+    #[serde(default = "default_network_config")]
+    pub network: NetworkConfig,
     #[serde(skip)]
     pub config_path: Option<PathBuf>,
 }
@@ -104,6 +163,10 @@ impl AppConfig {
                 parity: String::from("None"),
                 flow_control: String::from("None"),
                 timeout_ms: 100,
+                quick_commands: Vec::new(),
+                auto_reconnect: false,
+                reconnect_interval_ms: 1000,
+                max_reconnect_attempts: 3,
             },
             ui: UiConfig {
                 theme: String::from("light"),
@@ -119,6 +182,7 @@ impl AppConfig {
                 max_buffer_size: 10000,
                 data_format: String::from("text"),
             },
+            network: default_network_config(),
             config_path: Some(path.as_ref().to_path_buf()),
         }
     }
@@ -161,6 +225,7 @@ impl AppConfig {
             self.serial = loaded.serial;
             self.ui = loaded.ui;
             self.data = loaded.data;
+            self.network = loaded.network;
             Ok(())
         } else {
             log_error!("配置文件路径未设置");

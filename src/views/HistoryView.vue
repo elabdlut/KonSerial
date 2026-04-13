@@ -13,12 +13,24 @@ import { t } from '@/stores/i18n'
 interface SessionInfo {
   id: number
   connection_id: string
+  session_type: string
   port_name: string
   baud_rate: number
+  protocol: string
+  host: string
+  port: number
   started_at: string
   ended_at: string | null
   rx_bytes: number
   tx_bytes: number
+}
+
+const formatSessionLabel = (s: SessionInfo) => {
+  if (s.session_type === 'serial' || !s.session_type) {
+    return s.port_name || 'Serial'
+  }
+  const proto = (s.protocol || s.session_type).toUpperCase()
+  return `${proto} ${s.host || ''}:${s.port || 0}`
 }
 
 interface DataRecord {
@@ -150,13 +162,15 @@ onMounted(() => {
           @click="selectSession(s.id)"
         >
           <div class="session-header">
-            <span class="session-port">{{ s.port_name }}</span>
-            <NTag size="small" :bordered="false">{{ s.baud_rate }}</NTag>
+            <span class="session-port">{{ formatSessionLabel(s) }}</span>
+            <NTag v-if="s.session_type === 'serial' || !s.session_type" size="small" :bordered="false">{{ s.baud_rate }}</NTag>
+            <NTag v-else size="small" :bordered="false">{{ (s.protocol || s.session_type).toUpperCase() }}</NTag>
           </div>
           <div class="session-meta">
             <span>{{ s.started_at }}</span>
             <span v-if="s.ended_at">~ {{ s.ended_at }}</span>
             <span v-else class="tag-live">{{ t('history.active') }}</span>
+            <span v-if="s.session_type !== 'serial' && s.session_type">{{ s.host }}:{{ s.port }}</span>
           </div>
           <div class="session-stats">
             <span class="stat rx">RX {{ formatBytes(s.rx_bytes) }}</span>
@@ -217,8 +231,9 @@ onMounted(() => {
       </div>
       <div v-else class="records-wrapper">
         <div class="records-toolbar">
-          <span class="toolbar-info">{{ selectedSession.port_name }} @ {{ selectedSession.baud_rate }}</span>
+          <span class="toolbar-info">{{ formatSessionLabel(selectedSession) }}</span>
           <span class="toolbar-info">{{ selectedSession.started_at }}</span>
+          <span v-if="selectedSession.session_type !== 'serial' && selectedSession.session_type" class="toolbar-info">{{ (selectedSession.protocol || selectedSession.session_type).toUpperCase() }} {{ selectedSession.host }}:{{ selectedSession.port }}</span>
         </div>
         <NScrollbar class="records-scroll">
           <table class="records-table">

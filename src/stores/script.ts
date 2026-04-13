@@ -1,8 +1,12 @@
 import { ref, computed } from 'vue'
 import {
-  sendData, activeConnections, onScriptDataLine, onAnyScriptDataLine,
-  type ConnectionInfo,
+  sendData, activeConnections as serialActiveConnections, onScriptDataLine, onAnyScriptDataLine,
+  type ConnectionInfo as SerialConnectionInfo,
 } from './serial'
+import {
+  sendNetworkData, activeConnections as networkActiveConnections, onNetworkScriptDataLine, onAnyNetworkScriptDataLine,
+  type NetConnectionInfo,
+} from './network'
 
 export interface ScriptFile {
   id: string
@@ -28,7 +32,7 @@ export const scriptFiles = ref<ScriptFile[]>([
     modified: false,
     content: `// 使用 TARGET 获取第一个选中的连接
 // 使用 TARGETS 获取所有选中的连接数组
-// serial.send(text) 默认发送到 TARGET
+// serial.send(text) / network.send(text) 自动路由到串口或网络
 
 console.log("已选连接:", TARGETS);
 `,
@@ -93,36 +97,45 @@ export const scriptTemplates: ScriptTemplate[] = [
   {
     label: '空模板',
     value: 'empty',
-    content: `// 使用 TARGET 获取第一个选中的连接\n// 使用 TARGETS 获取所有选中的连接数组\n// serial.send(text) 默认发送到 TARGET\n\nconsole.log("已选连接:", TARGETS);\n`,
+    content: `// 使用 TARGET 获取第一个选中的连接\n// 使用 TARGETS 获取所有选中的连接数组\n// serial.send(text) / network.send(text) 自动路由到串口或网络\n\nconsole.log("已选连接:", TARGETS);\n`,
   },
   {
     label: '定时发送数据',
     value: 'timer',
-    content: `// 场景：每隔一段时间向某个串口发送数据\n\nlet count = 0;\nconst timer = setInterval(async () => {\n  count++;\n  await serial.send(\`heartbeat:\${count}\\n\`);\n  console.log(\`已发送心跳 #\${count}\`);\n}, 2000);\n\nconsole.log("定时发送已启动，点击停止以结束");\n`,
+    content: `// 场景：每隔一段时间向某个连接发送数据\n\nlet count = 0;\nconst timer = setInterval(async () => {\n  count++;\n  await serial.send(\`heartbeat:\${count}\\n\`);\n  console.log(\`已发送心跳 #\${count}\`);\n}, 2000);\n\nconsole.log("定时发送已启动，点击停止以结束");\n`,
   },
   {
-    label: '批量多串口发送',
+    label: '批量多连接发送',
     value: 'multi',
-    content: `// 场景：批量给多个串口发送初始化命令\n\nconst cmds = ["CMD_INIT\\n", "CMD_START\\n"];\n\nfor (const connId of TARGETS) {\n  for (const cmd of cmds) {\n    await serial.sendTo(connId, cmd);\n    console.log(\`发送至 \${connId}: \${cmd.trim()}\`);\n    await sleep(100);\n  }\n}\n\nconsole.log("批量发送完成");\n`,
+    content: `// 场景：批量给多个连接发送初始化命令\n\nconst cmds = ["CMD_INIT\\n", "CMD_START\\n"];\n\nfor (const connId of TARGETS) {\n  for (const cmd of cmds) {\n    await serial.sendTo(connId, cmd);\n    console.log(\`发送至 \${connId}: \${cmd.trim()}\`);\n    await sleep(100);\n  }\n}\n\nconsole.log("批量发送完成");\n`,
   },
   {
     label: '循环发送多种数据',
     value: 'cycle',
-    content: `// 场景：循环向串口发送多种数据\n\nconst frames = ["A\\n", "B\\n", "C\\n"];\nlet idx = 0;\n\nconst timer = setInterval(async () => {\n  const data = frames[idx];\n  await serial.send(data);\n  console.log(\`发送帧 [\${idx}]: \${data.trim()}\`);\n  idx = (idx + 1) % frames.length;\n}, 1000);\n\nconsole.log("循环发送已启动");\n`,
+    content: `// 场景：循环向连接发送多种数据\n\nconst frames = ["A\\n", "B\\n", "C\\n"];\nlet idx = 0;\n\nconst timer = setInterval(async () => {\n  const data = frames[idx];\n  await serial.send(data);\n  console.log(\`发送帧 [\${idx}]: \${data.trim()}\`);\n  idx = (idx + 1) % frames.length;\n}, 1000);\n\nconsole.log("循环发送已启动");\n`,
   },
   {
-    label: '串口数据转发',
+    label: '数据转发',
     value: 'forward',
-    content: `// 场景：从一个串口接收数据，处理后转发到另一个串口\n// 请确保选择了至少两个串口连接（第一个是源，第二个是目标）\n\nconst SOURCE = TARGETS[0];\nconst DEST = TARGETS[1];\n\nif (!SOURCE || !DEST) {\n  console.error("请至少选择两个连接：源和目标");\n  return;\n}\n\nserial.onData(SOURCE, async (line) => {\n  console.log(\`[RX \${SOURCE}] \${line}\`);\n  const out = \`FWD:\${line}\\n\`;\n  await serial.sendTo(DEST, out);\n});\n\nconsole.log(\`数据转发已启动: \${SOURCE} -> \${DEST}\`);\n`,
+    content: `// 场景：从一个连接接收数据，处理后转发到另一个连接\n// 请确保选择了至少两个连接（第一个是源，第二个是目标）\n\nconst SOURCE = TARGETS[0];\nconst DEST = TARGETS[1];\n\nif (!SOURCE || !DEST) {\n  console.error("请至少选择两个连接：源和目标");\n  return;\n}\n\nserial.onData(SOURCE, async (line) => {\n  console.log(\`[RX \${SOURCE}] \${line}\`);\n  const out = \`FWD:\${line}\\n\`;\n  await serial.sendTo(DEST, out);\n});\n\nconsole.log(\`数据转发已启动: \${SOURCE} -> \${DEST}\`);\n`,
   },
   {
     label: '条件响应（收到 A 回复 B）',
     value: 'echo',
-    content: `// 场景：监听串口数据，匹配到特定内容后自动回复\n\nserial.onData(TARGET, async (line) => {\n  console.log(\`收到: \${line}\`);\n\n  if (line.includes("ping")) {\n    await serial.send("pong\\n");\n    console.log("自动回复: pong");\n  } else if (line.includes("status")) {\n    await serial.send("OK\\n");\n    console.log("自动回复: OK");\n  }\n});\n\nconsole.log("条件响应已启动");\n`,
+    content: `// 场景：监听连接数据，匹配到特定内容后自动回复\n\nserial.onData(TARGET, async (line) => {\n  console.log(\`收到: \${line}\`);\n\n  if (line.includes("ping")) {\n    await serial.send("pong\\n");\n    console.log("自动回复: pong");\n  } else if (line.includes("status")) {\n    await serial.send("OK\\n");\n    console.log("自动回复: OK");\n  }\n});\n\nconsole.log("条件响应已启动");\n`,
+  },
+  {
+    label: '网络心跳 (TCP/WS)',
+    value: 'net_heartbeat',
+    content: `// 场景：向网络连接定时发送 JSON 心跳\n\nconst timer = setInterval(async () => {\n  const payload = JSON.stringify({ type: "ping", time: Date.now() }) + "\\n";\n  await network.send(payload);\n  console.log("发送网络心跳");\n}, 3000);\n\nnetwork.onData(TARGET, (line) => {\n  console.log(\`[NET RX] \${line}\`);\n});\n\nconsole.log("网络心跳已启动");\n`,
   },
 ]
 
 // ===== 执行引擎 =====
+
+function isNetworkConnection(connectionId: string): boolean {
+  return connectionId.startsWith('net_conn_')
+}
 
 export async function runScript(
   selectedConnectionIds: string[],
@@ -131,8 +144,8 @@ export async function runScript(
 ) {
   if (scriptIsRunning.value) return
   if (selectedConnectionIds.length === 0) {
-    addScriptLog('warn', '请先连接串口')
-    onNotify?.('warn', '请先连接串口')
+    addScriptLog('warn', '请先选择连接')
+    onNotify?.('warn', '请先选择连接')
     return
   }
 
@@ -144,12 +157,19 @@ export async function runScript(
   const primaryTarget = selectedConnectionIds[0]
   const allTargets = [...selectedConnectionIds]
 
-  const serialApi = {
+  const sendToAny = async (connectionId: string, data: string, isHex: boolean) => {
+    if (isNetworkConnection(connectionId)) {
+      return sendNetworkData(connectionId, data, isHex)
+    }
+    return sendData(connectionId, data, isHex)
+  }
+
+  const buildSerialApi = () => ({
     send: async (data: string) => {
       if (!runningAbort || runningAbort.signal.aborted) return
       try {
         addScriptLog('info', `TX[${primaryTarget.slice(-6)}] -> ${data.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}`)
-        await sendData(primaryTarget, data, false)
+        await sendToAny(primaryTarget, data, false)
       } catch (e) {
         addScriptLog('error', `TX fail: ${String(e)}`)
         throw e
@@ -159,7 +179,7 @@ export async function runScript(
       if (!runningAbort || runningAbort.signal.aborted) return
       try {
         addScriptLog('info', `TX[${primaryTarget.slice(-6)}](HEX) -> ${hex}`)
-        await sendData(primaryTarget, hex, true)
+        await sendToAny(primaryTarget, hex, true)
       } catch (e) {
         addScriptLog('error', `TX fail: ${String(e)}`)
         throw e
@@ -169,7 +189,7 @@ export async function runScript(
       if (!runningAbort || runningAbort.signal.aborted) return
       try {
         addScriptLog('info', `TX[${connectionId.slice(-6)}] -> ${data.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}`)
-        await sendData(connectionId, data, false)
+        await sendToAny(connectionId, data, false)
       } catch (e) {
         addScriptLog('error', `TX fail: ${String(e)}`)
         throw e
@@ -179,40 +199,70 @@ export async function runScript(
       if (!runningAbort || runningAbort.signal.aborted) return
       try {
         addScriptLog('info', `TX[${connectionId.slice(-6)}](HEX) -> ${hex}`)
-        await sendData(connectionId, hex, true)
+        await sendToAny(connectionId, hex, true)
       } catch (e) {
         addScriptLog('error', `TX fail: ${String(e)}`)
         throw e
       }
     },
     listConnections: () => {
-      return activeConnections.value.map((c: ConnectionInfo) => ({
+      const serial = serialActiveConnections.value.map((c: SerialConnectionInfo) => ({
         connection_id: c.connection_id,
+        type: 'serial' as const,
         port_name: c.config.port_name,
         baud_rate: c.config.baud_rate,
         status: typeof c.status === 'string' ? c.status : 'Error',
       }))
+      const net = networkActiveConnections.value.map((c: NetConnectionInfo) => ({
+        connection_id: c.connection_id,
+        type: 'network' as const,
+        protocol: c.config.protocol,
+        host: c.config.host,
+        port: c.config.port,
+        status: typeof c.status === 'string' ? c.status : 'Error',
+      }))
+      return [...serial, ...net]
     },
     isConnected: (connectionId: string) => {
-      return activeConnections.value.some(c => c.connection_id === connectionId && c.status === 'Connected')
+      const serial = serialActiveConnections.value.some(c => c.connection_id === connectionId && c.status === 'Connected')
+      const net = networkActiveConnections.value.some(c => c.connection_id === connectionId && c.status === 'Connected')
+      return serial || net
     },
     onData: (connectionId: string, callback: (line: string) => void) => {
-      const unsub = onScriptDataLine(connectionId, (line) => {
+      const unsubs: (() => void)[] = []
+      const unsubSerial = onScriptDataLine(connectionId, (line) => {
         if (runningAbort?.signal.aborted) return
         try { callback(line) } catch (e) { addScriptLog('error', String(e)) }
       })
-      scriptDataUnsubs.push(unsub)
-      return unsub
+      const unsubNet = onNetworkScriptDataLine(connectionId, (line) => {
+        if (runningAbort?.signal.aborted) return
+        try { callback(line) } catch (e) { addScriptLog('error', String(e)) }
+      })
+      unsubs.push(unsubSerial, unsubNet)
+      const combined = () => unsubs.forEach(u => u())
+      scriptDataUnsubs.push(combined)
+      return combined
     },
     onAnyData: (callback: (connectionId: string, line: string) => void) => {
-      const unsub = onAnyScriptDataLine((connId, line) => {
+      const unsubs: (() => void)[] = []
+      const unsubSerial = onAnyScriptDataLine((connId, line) => {
         if (runningAbort?.signal.aborted) return
         try { callback(connId, line) } catch (e) { addScriptLog('error', String(e)) }
       })
-      scriptDataUnsubs.push(unsub)
-      return unsub
+      const unsubNet = onAnyNetworkScriptDataLine((connId, line) => {
+        if (runningAbort?.signal.aborted) return
+        try { callback(connId, line) } catch (e) { addScriptLog('error', String(e)) }
+      })
+      unsubs.push(unsubSerial, unsubNet)
+      const combined = () => unsubs.forEach(u => u())
+      scriptDataUnsubs.push(combined)
+      return combined
     },
-  }
+  })
+
+  const serialApi = buildSerialApi()
+  // network 是 serial 的别名，API 完全一致
+  const networkApi = serialApi
 
   const sleepFn = (ms: number) => {
     return new Promise<void>((resolve, reject) => {
@@ -277,13 +327,13 @@ export async function runScript(
   try {
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
     const fn = new AsyncFunction(
-      'serial', 'sleep', 'console',
+      'serial', 'network', 'sleep', 'console',
       'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
       'TARGET', 'TARGETS',
       scriptContent
     )
     await fn(
-      serialApi, sleepFn, consoleMock,
+      serialApi, networkApi, sleepFn, consoleMock,
       setIntervalWrapped, clearIntervalWrapped,
       setTimeoutWrapped, clearIntervalWrapped,
       primaryTarget, allTargets

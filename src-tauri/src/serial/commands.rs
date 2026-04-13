@@ -117,6 +117,22 @@ pub async fn send_serial_data(
     mgr.send(&connection_id, data).await
 }
 
+/// 发送数据到指定串口（自动追加 CRC/校验和）
+#[tauri::command]
+pub async fn send_serial_data_with_crc(
+    manager: State<'_, Arc<Mutex<PortManager>>>,
+    connection_id: String,
+    mut data: Vec<u8>,
+    crc_algorithm: String,
+) -> Result<usize, String> {
+    use super::protocol::{CrcAlgorithm, append_crc};
+    let algo = CrcAlgorithm::from_str(&crc_algorithm)
+        .ok_or_else(|| format!("不支持的 CRC 算法: {}", crc_algorithm))?;
+    append_crc(&mut data, algo);
+    let mgr = manager.lock().await;
+    mgr.send(&connection_id, data).await
+}
+
 /// 发送文件到指定串口
 #[tauri::command]
 pub async fn send_serial_file(

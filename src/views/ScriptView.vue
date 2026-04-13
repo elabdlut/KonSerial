@@ -14,8 +14,11 @@ import {
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import {
-  activeConnections, type ConnectionInfo,
+  activeConnections as serialActiveConnections, type ConnectionInfo,
 } from '@/stores/serial'
+import {
+  activeConnections as networkActiveConnections,
+} from '@/stores/network'
 import {
   scriptFiles, activeScriptId, scriptLogs, scriptIsRunning, activeScript,
   selectedConnectionIds,
@@ -28,12 +31,17 @@ const message = useMessage()
 
 // ========== 连接选择（多选） ==========
 
-const connectionOptions = computed(() =>
-  activeConnections.value.map((c: ConnectionInfo) => ({
+const connectionOptions = computed(() => {
+  const serial = serialActiveConnections.value.map((c: ConnectionInfo) => ({
     label: `${c.config.port_name} (${c.status === 'Connected' ? '已连接' : '未连接'})`,
     value: c.connection_id,
   }))
-)
+  const net = networkActiveConnections.value.map((c) => ({
+    label: `${c.config.protocol.toUpperCase()} ${c.config.host}:${c.config.port} (${c.status === 'Connected' ? '已连接' : '未连接'})`,
+    value: c.connection_id,
+  }))
+  return [...serial, ...net]
+})
 
 // ========== 模板选择 ==========
 

@@ -116,6 +116,50 @@ export function applyFontSizeToDOM() {
   }, { immediate: true })
 }
 
+// ========== 网络设置 ==========
+
+export const networkProtocol = computed({
+  get: () => appConfig.value?.network.protocol ?? 'tcp',
+  set: (v: string) => {
+    if (appConfig.value) appConfig.value.network.protocol = v
+  },
+})
+
+export const networkHost = computed({
+  get: () => appConfig.value?.network.host ?? '127.0.0.1',
+  set: (v: string) => {
+    if (appConfig.value) appConfig.value.network.host = v
+  },
+})
+
+export const networkPort = computed({
+  get: () => appConfig.value?.network.port ?? 8080,
+  set: (v: number) => {
+    if (appConfig.value) appConfig.value.network.port = v
+  },
+})
+
+export const networkAutoReconnect = computed({
+  get: () => appConfig.value?.network.auto_reconnect ?? false,
+  set: (v: boolean) => {
+    if (appConfig.value) appConfig.value.network.auto_reconnect = v
+  },
+})
+
+export const networkReconnectInterval = computed({
+  get: () => appConfig.value?.network.reconnect_interval_ms ?? 1000,
+  set: (v: number) => {
+    if (appConfig.value) appConfig.value.network.reconnect_interval_ms = v
+  },
+})
+
+export const networkMaxReconnectAttempts = computed({
+  get: () => appConfig.value?.network.max_reconnect_attempts ?? 3,
+  set: (v: number) => {
+    if (appConfig.value) appConfig.value.network.max_reconnect_attempts = v
+  },
+})
+
 // ========== 保存 ==========
 
 /** 持久化当前设置到磁盘 */
