@@ -1,7 +1,7 @@
 {
   "tool_name": "Grep",
-  "tool_input_preview": "{\"pattern\":\"'history.exportFail'\",\"path\":\"/home/sratle/workspace/rust/KonSerial/src/stores/i18n.ts\",\"output_mode\":\"content\",\"-n\":true}",
+  "tool_input_preview": "{\"pattern\":\"greet\",\"path\":\"/home/sratle/workspace/rust/KonSerial/src\",\"output_mode\":\"files_with_matches\"}",
   "error": "spawn /home/sratle/.nvm/versions/node/v22.21.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg EACCES",
-  "timestamp": "2026-04-13T06:29:33.807Z",
+  "timestamp": "2026-04-14T08:43:30.682Z",
   "retry_count": 1
 }

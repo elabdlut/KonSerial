@@ -215,26 +215,4 @@ impl AppConfig {
         Ok(config)
     }
 
-    /// 重新加载配置（从已存储的路径）
-    pub fn reload(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(path) = &self.config_path {
-            let config_str = fs::read_to_string(path)?;
-            let loaded: AppConfig = serde_json::from_str(&config_str)?;
-
-            // 更新配置，保留路径
-            self.serial = loaded.serial;
-            self.ui = loaded.ui;
-            self.data = loaded.data;
-            self.network = loaded.network;
-            Ok(())
-        } else {
-            log_error!("配置文件路径未设置");
-            Err("配置文件路径未设置".into())
-        }
-    }
-
-    /// 获取配置文件路径
-    pub fn get_path(&self) -> Option<&PathBuf> {
-        self.config_path.as_ref()
-    }
 }

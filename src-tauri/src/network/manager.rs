@@ -37,9 +37,6 @@ impl NetProtocol {
         }
     }
 
-    pub fn is_server(&self) -> bool {
-        matches!(self, NetProtocol::TcpServer | NetProtocol::UdpServer)
-    }
 }
 
 /// 网络连接配置

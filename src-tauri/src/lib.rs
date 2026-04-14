@@ -15,13 +15,6 @@ use crate::network::manager::NetworkManager;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    log_info!(&format!("Greet 被调用: name={}", name));
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 初始化日志
@@ -59,8 +52,6 @@ pub fn run() {
         .manage(data_logger)
         .manage(network_manager)
         .invoke_handler(tauri::generate_handler![
-            // 基础命令
-            greet,
             // 配置管理命令
             crate::utils::commands::load_config,
             crate::utils::commands::save_config,
