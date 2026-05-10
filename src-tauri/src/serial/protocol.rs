@@ -36,8 +36,19 @@ pub fn compute_crc(algorithm: CrcAlgorithm, data: &[u8]) -> Vec<u8> {
             vec![xor]
         }
         CrcAlgorithm::Crc16Ccitt => {
-            use crc::{Crc, CRC_16_USB};
-            let crc = Crc::<u16>::new(&CRC_16_USB);
+            // CRC-16-CCITT-FALSE (与 CRC_16_IBM_3740 等价)
+            use crc::{Algorithm, Crc};
+            const ALGO: Algorithm<u16> = Algorithm::<u16> {
+                width: 16,
+                poly: 0x1021,
+                init: 0xffff,
+                refin: false,
+                refout: false,
+                xorout: 0x0000,
+                check: 0x29b1,
+                residue: 0x0000,
+            };
+            let crc = Crc::<u16>::new(&ALGO);
             let checksum = crc.checksum(data);
             vec![(checksum & 0xFF) as u8, ((checksum >> 8) & 0xFF) as u8]
         }

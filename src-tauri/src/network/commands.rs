@@ -10,9 +10,7 @@ pub async fn open_network_connection(
     app_handle: tauri::AppHandle,
     manager: State<'_, Arc<Mutex<NetworkManager>>>,
 ) -> Result<(), String> {
-    let mgr = manager.inner().clone();
-    let result = mgr.lock().await.open(connection_id, config, app_handle).await;
-    result
+    manager.inner().lock().await.open(connection_id, config, app_handle).await
 }
 
 #[tauri::command]

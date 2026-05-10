@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import {
   NButton, NSelect, NSpace, NInput, NInputNumber,
   NIcon, NSwitch, NScrollbar, NDivider, NTag,
@@ -29,7 +29,11 @@ import {
 } from '@/stores/network'
 import { t } from '@/stores/i18n'
 import { appConfig, saveConfig } from '@/stores/config'
-import type { QuickCommand } from '@/stores/config'
+import type { QuickCommand, NewlineType } from '@/stores/config'
+import { formatHex } from '@/utils/hex'
+import { formatRate, formatDuration } from '@/utils/format'
+import ConnectionTerminal from './ConnectionTerminal.vue'
+import ConnectionSendPane from './ConnectionSendPane.vue'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { readFile } from '@tauri-apps/plugin-fs'
 
@@ -85,11 +89,36 @@ const isActive = computed(() => {
 })
 
 const connectionStats = computed(() => {
-  if (!connectionInfo.value) return { sent: 0, received: 0 }
+  if (!connectionInfo.value) {
+    return { sent: 0, received: 0, txRate: 0, rxRate: 0, connectedAt: null }
+  }
   return {
     sent: connectionInfo.value.bytes_sent,
-    received: connectionInfo.value.bytes_received
+    received: connectionInfo.value.bytes_received,
+    txRate: connectionInfo.value.tx_rate,
+    rxRate: connectionInfo.value.rx_rate,
+    connectedAt: connectionInfo.value.connected_at,
   }
+})
+
+// 连接时长刷新定时器
+const durationNow = ref(Date.now())
+let durationTimer: number | null = null
+watch(isActive, (connected) => {
+  if (connected) {
+    durationTimer = window.setInterval(() => { durationNow.value = Date.now() }, 1000)
+  } else if (durationTimer !== null) {
+    clearInterval(durationTimer)
+    durationTimer = null
+  }
+}, { immediate: true })
+onUnmounted(() => {
+  if (durationTimer !== null) clearInterval(durationTimer)
+})
+
+const connectionDuration = computed(() => {
+  durationNow.value
+  return formatDuration(connectionStats.value.connectedAt)
 })
 
 const terminalLogs = computed(() => {
@@ -141,11 +170,6 @@ const currentSelectedPeer = computed({
     }
   }
 })
-
-const formatHex = (text: string) => {
-  const bytes = new TextEncoder().encode(text)
-  return Array.from(bytes).map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ')
-}
 
 const toggleConnection = async () => {
   loading.value = true
@@ -245,28 +269,25 @@ const handleQuickSend = async (cmd: QuickCommand) => {
   }
 }
 
-const addQuickCommand = async () => {
-  if (!quickCmdForm.value.name.trim() || !quickCmdForm.value.content.trim()) return
-  const list = appConfig.value?.network?.quick_commands || []
-  list.push({
-    name: quickCmdForm.value.name.trim(),
-    content: quickCmdForm.value.content,
-    is_hex: quickCmdForm.value.isHex,
-    append_newline: 'none',
-  })
+const addQuickCommand = async (...args: [string, string, boolean]) => {
+  const [name, content, isHex] = args
+  if (!name.trim() || !content.trim()) return
+  const newCmd: QuickCommand = {
+    name: name.trim(),
+    content: content,
+    is_hex: isHex,
+    append_newline: 'none' as NewlineType,
+  }
   if (appConfig.value) {
-    appConfig.value.network.quick_commands = [...list]
+    appConfig.value.network.quick_commands = [...quickCommands.value, newCmd]
     await saveConfig()
   }
-  quickCmdForm.value = { name: '', content: '', isHex: false }
-  showQuickCmdForm.value = false
 }
 
 const removeQuickCommand = async (index: number) => {
-  const list = appConfig.value?.network?.quick_commands || []
-  list.splice(index, 1)
   if (appConfig.value) {
-    appConfig.value.network.quick_commands = [...list]
+    const newList = quickCommands.value.filter((_, i) => i !== index)
+    appConfig.value.network.quick_commands = newList
     await saveConfig()
   }
 }
@@ -312,7 +333,7 @@ watch(() => filteredTerminalLogs.value.length, () => {
       <div class="config-section">
         <div class="section-title">
           <NIcon :component="SettingsOutline" size="16" />
-          <span>网络配置</span>
+          <span>{{ t('network.config') }}</span>
         </div>
 
         <div class="config-item">
@@ -401,7 +422,7 @@ watch(() => filteredTerminalLogs.value.length, () => {
         <NDivider style="margin: 20px 0 16px" />
         <div class="section-title">
           <NIcon :component="GlobeOutline" size="16" />
-          <span>数据统计</span>
+          <span>{{ t('network.statistics') }}</span>
         </div>
         <div class="stats-grid">
           <div class="stat-item">
@@ -412,162 +433,56 @@ watch(() => filteredTerminalLogs.value.length, () => {
             <span class="stat-label">RX</span>
             <span class="stat-value rx">{{ connectionStats.received }}</span>
           </div>
+          <div class="stat-item">
+            <span class="stat-label">↑ TX/s</span>
+            <span class="stat-value tx">{{ formatRate(connectionStats.txRate) }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">↓ RX/s</span>
+            <span class="stat-value rx">{{ formatRate(connectionStats.rxRate) }}</span>
+          </div>
+          <div class="stat-item" style="grid-column: span 2;">
+            <span class="stat-label">时长</span>
+            <span class="stat-value">{{ connectionDuration }}</span>
+          </div>
         </div>
       </div>
     </aside>
 
     <!-- 右侧主区域 -->
     <main class="main-area">
-      <div class="terminal-section">
-        <div class="terminal-header">
-          <div class="terminal-title">
-            <NIcon :component="SwapHorizontalOutline" size="18" />
-            <span>{{ t('network.terminal') }}</span>
-            <NTag size="small" :bordered="false" type="info">{{ terminalLogs.length }}</NTag>
-          </div>
-          <NSpace align="center" :size="8">
-            <NSelect
-              v-model:value="display.encoding"
-              :options="encodingOptions"
-              size="small"
-              style="width: 90px"
-            />
-            <NSwitch v-model:value="display.hexDisplay" size="small">
-              <template #checked>HEX</template>
-              <template #unchecked>文本</template>
-            </NSwitch>
-            <NSwitch v-model:value="display.autoScroll" size="small">
-              <template #checked>滚动</template>
-              <template #unchecked>滚动</template>
-            </NSwitch>
-            <NButton size="small" quaternary @click="clearLog">
-              <template #icon><NIcon :component="TrashOutline" /></template>
-              {{ t('network.clear') }}
-            </NButton>
-          </NSpace>
-        </div>
-
-        <div class="terminal-filter-bar">
-          <NInput
-            v-model:value="logFilterText"
-            :placeholder="t('serial.searchLog')"
-            size="tiny"
-            clearable
-            style="width: 140px"
-          />
-          <NCheckboxGroup v-model:value="logFilterTypes" size="small">
-            <NSpace :size="8">
-              <NCheckbox value="tx" label="TX" />
-              <NCheckbox value="rx" label="RX" />
-              <NCheckbox value="system" label="SYS" />
-              <NCheckbox value="error" label="ERR" />
-            </NSpace>
-          </NCheckboxGroup>
-          <NTag size="small" :bordered="false" type="info">{{ filteredTerminalLogs.length }} / {{ terminalLogs.length }}</NTag>
-        </div>
-
-        <NScrollbar ref="scrollbarRef" class="terminal-content">
-          <div class="terminal-body">
-            <div
-              v-for="(item, idx) in filteredTerminalLogs"
-              :key="idx"
-              class="log-line"
-              :class="item.type"
-            >
-              <span class="log-time">{{ item.time }}</span>
-              <span class="log-type">
-                {{ item.type === 'tx' ? 'TX' : item.type === 'rx' ? 'RX' : item.type === 'system' ? 'SYS' : 'ERR' }}
-              </span>
-              <span class="log-content">
-                {{ display.hexDisplay ? formatHex(item.content) : item.content }}
-              </span>
-            </div>
-            <div v-if="filteredTerminalLogs.length === 0" class="terminal-empty">
-              <NIcon :component="SwapHorizontalOutline" size="40" />
-              <p>{{ t('network.emptyHint') }}</p>
-            </div>
-          </div>
-        </NScrollbar>
-      </div>
-
-      <div class="send-section">
-        <div class="send-options">
-          <NSpace align="center" :size="12">
-            <NSwitch v-model:value="hexSend" size="small">
-              <template #checked>{{ t('network.hexSend') }}</template>
-              <template #unchecked>{{ t('network.textSend') }}</template>
-            </NSwitch>
-          </NSpace>
-        </div>
-
-        <!-- 快捷命令 -->
-        <div class="quick-commands-bar">
-          <div v-if="!showQuickCmdForm" class="quick-commands-list">
-            <NButton
-              v-for="(cmd, idx) in quickCommands"
-              :key="idx"
-              size="tiny"
-              quaternary
-              type="info"
-              :disabled="!isActive"
-              @click="handleQuickSend(cmd)"
-            >
-              {{ cmd.name }}
-              <template #icon>
-                <NIcon :component="CloseOutline" @click.stop="removeQuickCommand(idx)" />
-              </template>
-            </NButton>
-            <NButton size="tiny" text @click="showQuickCmdForm = true">
-              + {{ t('serial.addQuickCmd') }}
-            </NButton>
-          </div>
-          <div v-else class="quick-command-form">
-            <NInput
-              v-model:value="quickCmdForm.name"
-              :placeholder="t('serial.cmdName')"
-              size="tiny"
-              style="width: 100px"
-            />
-            <NInput
-              v-model:value="quickCmdForm.content"
-              :placeholder="t('serial.cmdContent')"
-              size="tiny"
-              style="flex: 1"
-            />
-            <NSwitch v-model:value="quickCmdForm.isHex" size="small">
-              <template #checked>HEX</template>
-              <template #unchecked>TXT</template>
-            </NSwitch>
-            <NButton size="tiny" @click="addQuickCommand">{{ t('serial.addQuickCmd') }}</NButton>
-            <NButton size="tiny" text @click="showQuickCmdForm = false">取消</NButton>
-          </div>
-        </div>
-
-        <div class="send-input">
-          <NInput
-            v-model:value="sendText"
-            :disabled="!isActive || (isServer && peers.length > 0 && !currentSelectedPeer)"
-            :placeholder="hexSend ? '输入十六进制数据，如: 01 02 03 FF' : '输入要发送的数据...'"
-            @keydown.enter="handleSend"
-            clearable
-          />
-          <NButton
-            type="primary"
-            :disabled="!isActive || !sendText.trim() || (isServer && peers.length > 0 && !currentSelectedPeer)"
-            @click="handleSend"
-          >
-            <template #icon><NIcon :component="SendOutline" /></template>
-            {{ t('network.send') }}
-          </NButton>
-          <NButton
-            :disabled="!isActive || (isServer && peers.length > 0 && !currentSelectedPeer)"
-            @click="handleSendFile"
-          >
-            <template #icon><NIcon :component="DocumentOutline" /></template>
-            {{ t('serial.sendFile') }}
-          </NButton>
-        </div>
-      </div>
+      <ConnectionTerminal
+        :logs="terminalLogs"
+        :title="t('network.terminal')"
+        :log-count="terminalLogs.length"
+        :empty-hint="t('network.emptyHint')"
+        :clear-label="t('network.clear')"
+        :search-placeholder="t('serial.searchLog')"
+        :encoding-options="encodingOptions"
+        @clear="clearLog"
+      />
+      <ConnectionSendPane
+        :is-connected="isActive"
+        :send-disabled="!isActive || (isServer && peers.length > 0 && !currentSelectedPeer)"
+        v-model:hex-send="hexSend"
+        v-model:send-text="sendText"
+        :show-newline="false"
+        :show-crc="false"
+        :show-file="true"
+        :quick-commands="quickCommands"
+        placeholder-hex="输入十六进制数据，如: 01 02 03 FF"
+        placeholder-text="输入要发送的数据..."
+        :send-label="t('network.send')"
+        file-label="发送文件"
+        add-quick-cmd-label="+ 添加快捷命令"
+        cmd-name-placeholder="命令名称"
+        cmd-content-placeholder="命令内容"
+        @send="handleSend"
+        @send-file="handleSendFile"
+        @add-quick-command="(name, content, isHex) => addQuickCommand(name, content, isHex)"
+        @remove-quick-command="removeQuickCommand"
+        @quick-send="handleQuickSend"
+      />
     </main>
   </div>
 </template>
@@ -715,131 +630,4 @@ watch(() => filteredTerminalLogs.value.length, () => {
   min-width: 0;
 }
 
-.terminal-section {
-  flex: 1;
-  background: var(--bg-terminal);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-height: 0;
-}
-
-.terminal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: #252526;
-  border-bottom: 1px solid #333;
-}
-
-.terminal-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #ccc;
-  font-size: var(--font-base);
-  font-weight: 500;
-}
-
-.terminal-content {
-  flex: 1;
-  min-height: 0;
-}
-
-.terminal-body {
-  padding: 12px 16px;
-  min-height: 100%;
-}
-
-.log-line {
-  display: flex;
-  gap: 12px;
-  padding: 4px 0;
-  font-family: 'SF Mono', Monaco, Consolas, monospace;
-  font-size: var(--app-font-size, 13px);
-  line-height: 1.5;
-}
-
-.log-time {
-  color: #666;
-  flex-shrink: 0;
-}
-
-.log-type {
-  width: 32px;
-  flex-shrink: 0;
-  font-weight: 600;
-}
-
-.log-line.tx .log-type { color: #64b5f6; }
-.log-line.rx .log-type { color: #81c784; }
-.log-line.system .log-type { color: #ffb74d; }
-.log-line.error .log-type { color: #e57373; }
-
-.log-content {
-  color: #d4d4d4;
-  word-break: break-all;
-}
-
-.terminal-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 200px;
-  color: #555;
-  gap: 12px;
-}
-
-.terminal-empty p {
-  font-size: var(--font-base);
-}
-
-.send-section {
-  background: var(--bg-card);
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: var(--shadow-card);
-}
-
-.send-options {
-  margin-bottom: 12px;
-}
-
-.send-input {
-  display: flex;
-  gap: 12px;
-}
-
-.send-input :deep(.n-input) {
-  flex: 1;
-}
-
-.terminal-filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  background: #1e1e1e;
-  border-bottom: 1px solid #333;
-}
-
-.quick-commands-bar {
-  margin-bottom: 12px;
-}
-
-.quick-commands-list {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.quick-command-form {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 </style>

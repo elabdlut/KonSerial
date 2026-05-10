@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import {
-  NButton, NSelect, NSpace, NIcon, NSwitch, NInputNumber,
+  NButton, NSelect, NSpace, NIcon, NSwitch, NInputNumber, NInput,
   NDivider, NScrollbar,
   useMessage
 } from 'naive-ui'
@@ -10,7 +10,6 @@ import {
   SaveOutline, RefreshOutline, InformationCircleOutline,
   ServerOutline, ShieldCheckmarkOutline, GlobeOutline
 } from '@vicons/ionicons5'
-import { loadConfig } from '@/stores/config'
 import {
   themeSetting, fontSize, language,
   autoSave, saveInterval, maxBufferSize,
@@ -59,6 +58,8 @@ const handleSave = async () => {
   }
 }
 
+// 自动保存已由 settings.ts 处理，此处保留手动保存按钮作为即时反馈
+
 const handleReset = () => {
   themeSetting.value = 'light'
   language.value = 'zh-CN'
@@ -75,9 +76,6 @@ const handleReset = () => {
   message.info(t('settings.resetDone'))
 }
 
-onMounted(async () => {
-  await loadConfig()
-})
 </script>
 
 <template>
@@ -297,7 +295,7 @@ onMounted(async () => {
               </div>
               <div class="app-details">
                 <h3>KonSerial</h3>
-                <p class="version">v0.1.0</p>
+                <p class="version">v0.2.0</p>
                 <p class="desc">{{ t('settings.appDesc') }}</p>
               </div>
             </div>

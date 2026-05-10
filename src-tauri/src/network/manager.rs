@@ -67,6 +67,9 @@ pub struct NetConnectionInfo {
     pub config: NetConnectionConfig,
     pub bytes_received: u64,
     pub bytes_sent: u64,
+    pub rx_rate: f64,        // 接收速率 (bytes/s)
+    pub tx_rate: f64,        // 发送速率 (bytes/s)
+    pub connected_at: Option<String>, // 连接成功时间
     pub last_error: Option<String>,
     pub created_at: String,
 }
@@ -115,9 +118,15 @@ struct NetConnection {
     info: Arc<Mutex<NetConnectionInfo>>,
     read_task: tokio::task::JoinHandle<()>,
     accept_task: Option<tokio::task::JoinHandle<()>>,
+    /// TCP Server 模式下存储各客户端的读取任务句柄，用于 close 时强制终止
+    peer_tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
     running: Arc<AtomicBool>,
     bytes_received_counter: Arc<AtomicU64>,
     session_id: i64,
+    // 速率计算状态
+    last_rx_bytes: AtomicU64,
+    last_tx_bytes: AtomicU64,
+    last_rate_time: std::sync::Mutex<std::time::Instant>,
 }
 
 /// 网络连接管理器
@@ -159,6 +168,7 @@ impl NetworkManager {
         let protocol_str = config.protocol.as_str();
         let session_id = self.data_logger
             .create_network_session(&connection_id, protocol_str, protocol_str, &config.host, config.port)
+            .await
             .map_err(|e| format!("创建网络会话失败: {}", e))?;
 
         let connection = match config.protocol {
@@ -216,6 +226,9 @@ impl NetworkManager {
             config,
             bytes_received: 0,
             bytes_sent: 0,
+            rx_rate: 0.0,
+            tx_rate: 0.0,
+            connected_at: Some(chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()),
             last_error: None,
             created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         }));
@@ -237,7 +250,7 @@ impl NetworkManager {
                     Ok(n) => {
                         counter_clone.fetch_add(n as u64, Ordering::Relaxed);
                         let data = buf[..n].to_vec();
-                        let _ = data_logger.log_rx(session_id, &data);
+                        let _ = data_logger.log_rx(session_id, &data).await;
                         let _ = app_handle.emit("network-data", NetworkDataPayload {
                             connection_id: conn_id.clone(),
                             data,
@@ -253,9 +266,13 @@ impl NetworkManager {
             info,
             read_task,
             accept_task: None,
+            peer_tasks: Arc::new(Mutex::new(HashMap::new())),
             running,
             bytes_received_counter: bytes_counter,
             session_id,
+            last_rx_bytes: AtomicU64::new(0),
+            last_tx_bytes: AtomicU64::new(0),
+            last_rate_time: std::sync::Mutex::new(std::time::Instant::now()),
         })
     }
 
@@ -287,6 +304,9 @@ impl NetworkManager {
             config,
             bytes_received: 0,
             bytes_sent: 0,
+            rx_rate: 0.0,
+            tx_rate: 0.0,
+            connected_at: Some(chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()),
             last_error: None,
             created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         }));
@@ -308,7 +328,7 @@ impl NetworkManager {
                     Ok(n) => {
                         counter_clone.fetch_add(n as u64, Ordering::Relaxed);
                         let data = buf[..n].to_vec();
-                        let _ = data_logger.log_rx(session_id, &data);
+                        let _ = data_logger.log_rx(session_id, &data).await;
                         let _ = app_handle.emit("network-data", NetworkDataPayload {
                             connection_id: conn_id.clone(),
                             data,
@@ -324,9 +344,13 @@ impl NetworkManager {
             info,
             read_task,
             accept_task: None,
+            peer_tasks: Arc::new(Mutex::new(HashMap::new())),
             running,
             bytes_received_counter: bytes_counter,
             session_id,
+            last_rx_bytes: AtomicU64::new(0),
+            last_tx_bytes: AtomicU64::new(0),
+            last_rate_time: std::sync::Mutex::new(std::time::Instant::now()),
         })
     }
 
@@ -341,7 +365,12 @@ impl NetworkManager {
         session_id: i64,
     ) -> Result<NetConnection, String> {
         let path = config.path.clone().unwrap_or_default();
-        let url = format!("ws://{}:{}{}", config.host, config.port, path);
+        let url = if config.host.contains(':') && !config.host.starts_with('[') {
+            // IPv6 地址需要加方括号
+            format!("ws://[{}]:{}{}", config.host, config.port, path)
+        } else {
+            format!("ws://{}:{}{}", config.host, config.port, path)
+        };
         let (ws_stream, _) = tokio_tungstenite::connect_async(&url)
             .await
             .map_err(|e| format!("WebSocket 连接失败: {}", e))?;
@@ -365,6 +394,9 @@ impl NetworkManager {
             config,
             bytes_received: 0,
             bytes_sent: 0,
+            rx_rate: 0.0,
+            tx_rate: 0.0,
+            connected_at: Some(chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()),
             last_error: None,
             created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         }));
@@ -388,7 +420,7 @@ impl NetworkManager {
                         });
                     }
                     Some(Ok(Message::Text(text))) => {
-                        let vec_data = text.to_string().into_bytes();
+                        let vec_data = text.as_bytes().to_vec();
                         counter_clone.fetch_add(vec_data.len() as u64, Ordering::Relaxed);
                         let _ = data_logger.log_rx(session_id, &vec_data);
                         let _ = app_handle.emit("network-data", NetworkDataPayload {
@@ -419,9 +451,13 @@ impl NetworkManager {
             info,
             read_task,
             accept_task: None,
+            peer_tasks: Arc::new(Mutex::new(HashMap::new())),
             running,
             bytes_received_counter: bytes_counter,
             session_id,
+            last_rx_bytes: AtomicU64::new(0),
+            last_tx_bytes: AtomicU64::new(0),
+            last_rate_time: std::sync::Mutex::new(std::time::Instant::now()),
         })
     }
 
@@ -460,6 +496,9 @@ impl NetworkManager {
             config,
             bytes_received: 0,
             bytes_sent: 0,
+            rx_rate: 0.0,
+            tx_rate: 0.0,
+            connected_at: Some(chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()),
             last_error: None,
             created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         }));
@@ -474,7 +513,7 @@ impl NetworkManager {
                     Ok(Event::Incoming(Packet::Publish(p))) => {
                         let data = p.payload.to_vec();
                         counter_clone.fetch_add(data.len() as u64, Ordering::Relaxed);
-                        let _ = data_logger.log_rx(session_id, &data);
+                        let _ = data_logger.log_rx(session_id, &data).await;
                         let _ = app_handle.emit("network-data", NetworkDataPayload {
                             connection_id: conn_id.clone(),
                             data,
@@ -506,9 +545,13 @@ impl NetworkManager {
             info,
             read_task,
             accept_task: None,
+            peer_tasks: Arc::new(Mutex::new(HashMap::new())),
             running,
             bytes_received_counter: bytes_counter,
             session_id,
+            last_rx_bytes: AtomicU64::new(0),
+            last_tx_bytes: AtomicU64::new(0),
+            last_rate_time: std::sync::Mutex::new(std::time::Instant::now()),
         })
     }
 
@@ -528,6 +571,8 @@ impl NetworkManager {
 
         let peers: Arc<Mutex<HashMap<String, Arc<Mutex<tokio::net::tcp::OwnedWriteHalf>>>>> =
             Arc::new(Mutex::new(HashMap::new()));
+        let peer_tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
 
         let info = Arc::new(Mutex::new(NetConnectionInfo {
             connection_id: connection_id.clone(),
@@ -535,6 +580,9 @@ impl NetworkManager {
             config,
             bytes_received: 0,
             bytes_sent: 0,
+            rx_rate: 0.0,
+            tx_rate: 0.0,
+            connected_at: Some(chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()),
             last_error: None,
             created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         }));
@@ -543,6 +591,7 @@ impl NetworkManager {
         let conn_id = connection_id.clone();
         let running_clone = running.clone();
         let peers_clone = peers.clone();
+        let peer_tasks_clone = peer_tasks.clone();
         let app_handle_clone = app_handle.clone();
 
         let bytes_counter_clone = bytes_counter.clone();
@@ -572,7 +621,7 @@ impl NetworkManager {
                         let peer_id_inner = peer_id.clone();
                         let data_logger_inner = data_logger_clone.clone();
 
-                        tokio::spawn(async move {
+                        let peer_task = tokio::spawn(async move {
                             let mut buf = [0u8; 1024];
                             loop {
                                 if !running_inner.load(Ordering::Relaxed) { break; }
@@ -581,7 +630,7 @@ impl NetworkManager {
                                     Ok(n) => {
                                         counter_inner.fetch_add(n as u64, Ordering::Relaxed);
                                         let data = buf[..n].to_vec();
-                                        let _ = data_logger_inner.log_rx(session_id, &data);
+                                        let _ = data_logger_inner.log_rx(session_id, &data).await;
                                         let _ = app_handle_inner.emit("network-data", NetworkDataPayload {
                                             connection_id: conn_id_inner.clone(),
                                             data,
@@ -593,7 +642,7 @@ impl NetworkManager {
                             peers_inner.lock().await.remove(&peer_id_inner);
                             let _ = app_handle_inner.emit("network-peer-update", NetworkPeerEvent {
                                 connection_id: conn_id_inner.clone(),
-                                peer_id: peer_id_inner,
+                                peer_id: peer_id_inner.clone(),
                                 event: "disconnected".into(),
                             });
                             let remaining = peers_inner.lock().await.len();
@@ -604,6 +653,7 @@ impl NetworkManager {
                                 }
                             }
                         });
+                        peer_tasks_clone.lock().await.insert(peer_id, peer_task);
 
                         {
                             let mut i = info_clone.lock().await;
@@ -621,9 +671,13 @@ impl NetworkManager {
             info,
             read_task: tokio::spawn(async {}),
             accept_task: Some(accept_task),
+            peer_tasks,
             running,
             bytes_received_counter: bytes_counter,
             session_id,
+            last_rx_bytes: AtomicU64::new(0),
+            last_tx_bytes: AtomicU64::new(0),
+            last_rate_time: std::sync::Mutex::new(std::time::Instant::now()),
         })
     }
 
@@ -652,6 +706,9 @@ impl NetworkManager {
             config,
             bytes_received: 0,
             bytes_sent: 0,
+            rx_rate: 0.0,
+            tx_rate: 0.0,
+            connected_at: Some(chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()),
             last_error: None,
             created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         }));
@@ -686,7 +743,7 @@ impl NetworkManager {
                             info.status = NetStatus::Connected;
                         }
                         let data = buf[..n].to_vec();
-                        let _ = data_logger.log_rx(session_id, &data);
+                        let _ = data_logger.log_rx(session_id, &data).await;
                         let _ = app_handle_clone.emit("network-data", NetworkDataPayload {
                             connection_id: conn_id.clone(),
                             data,
@@ -702,9 +759,13 @@ impl NetworkManager {
             info,
             read_task,
             accept_task: None,
+            peer_tasks: Arc::new(Mutex::new(HashMap::new())),
             running,
             bytes_received_counter: bytes_counter,
             session_id,
+            last_rx_bytes: AtomicU64::new(0),
+            last_tx_bytes: AtomicU64::new(0),
+            last_rate_time: std::sync::Mutex::new(std::time::Instant::now()),
         })
     }
 
@@ -715,11 +776,13 @@ impl NetworkManager {
         data: Vec<u8>,
         peer_id: Option<&str>,
     ) -> Result<usize, String> {
-        let mut conns = self.connections.write().await;
+        let bytes = data.len();
 
-        if let Some(conn) = conns.get_mut(connection_id) {
-            let bytes = data.len();
-            let data_for_log = data.clone();
+        // Phase 1: 读锁查找连接并执行 I/O（读锁允许多个并发）
+        let session_id = {
+            let conns = self.connections.read().await;
+            let conn = conns.get(connection_id)
+                .ok_or_else(|| format!("连接 {} 不存在", connection_id))?;
             match &conn.writer {
                 NetWriter::Tcp(write_half) => {
                     let mut w = write_half.lock().await;
@@ -735,7 +798,7 @@ impl NetworkManager {
                 }
                 NetWriter::Ws(tx) => {
                     use tokio_tungstenite::tungstenite::protocol::Message;
-                    tx.send(Message::Binary(data.into()))
+                    tx.send(Message::Binary(data.clone().into()))
                         .map_err(|e| format!("WebSocket 发送失败: {}", e))?;
                 }
                 NetWriter::Mqtt(client) => {
@@ -749,7 +812,7 @@ impl NetworkManager {
                         .clone()
                         .unwrap_or_else(|| "debug/pub".to_string());
                     client
-                        .publish(&topic, QoS::AtMostOnce, false, data)
+                        .publish(&topic, QoS::AtMostOnce, false, data.clone())
                         .await
                         .map_err(|e| format!("MQTT 发送失败: {}", e))?;
                 }
@@ -780,12 +843,19 @@ impl NetworkManager {
                         .map_err(|e| format!("UDP Server 发送失败: {}", e))?;
                 }
             }
-            conn.info.lock().await.bytes_sent += bytes as u64;
-            let _ = self.data_logger.log_tx(conn.session_id, &data_for_log);
-            Ok(bytes)
-        } else {
-            Err(format!("连接 {} 不存在", connection_id))
+            conn.session_id
+        }; // 读锁在此释放
+
+        // Phase 2: 短暂写锁仅更新统计
+        {
+            let mut conns = self.connections.write().await;
+            if let Some(conn) = conns.get_mut(connection_id) {
+                conn.info.lock().await.bytes_sent += bytes as u64;
+            }
         }
+
+        let _ = self.data_logger.log_tx(session_id, &data).await;
+        Ok(bytes)
     }
 
     /// 关闭指定连接
@@ -798,7 +868,12 @@ impl NetworkManager {
             if let Some(t) = conn.accept_task {
                 t.abort();
             }
-            let _ = self.data_logger.end_session(conn.session_id);
+            // 终止所有 TCP Server 客户端任务
+            let mut pt = conn.peer_tasks.lock().await;
+            for (_, task) in pt.drain() {
+                task.abort();
+            }
+            let _ = self.data_logger.end_session(conn.session_id).await;
             log_info!(&format!("[{}] 网络连接已关闭", connection_id));
             Ok(())
         } else {
@@ -816,9 +891,35 @@ impl NetworkManager {
             if let Some(t) = conn.accept_task {
                 t.abort();
             }
-            let _ = self.data_logger.end_session(conn.session_id);
+            // 终止所有 TCP Server 客户端任务
+            let mut pt = conn.peer_tasks.lock().await;
+            for (_, task) in pt.drain() {
+                task.abort();
+            }
+            let _ = self.data_logger.end_session(conn.session_id).await;
         }
         log_info!(&format!("已关闭所有网络连接 ({}个)", count));
+    }
+
+    /// 计算并更新连接速率
+    fn compute_rates(conn: &NetConnection, info: &mut NetConnectionInfo) {
+        let now = std::time::Instant::now();
+        let last_time = *conn.last_rate_time.lock().unwrap();
+        let elapsed = now.duration_since(last_time).as_secs_f64();
+
+        let current_rx = conn.bytes_received_counter.load(Ordering::Relaxed);
+        let current_tx = info.bytes_sent;
+        let last_rx = conn.last_rx_bytes.load(Ordering::Relaxed);
+        let last_tx = conn.last_tx_bytes.load(Ordering::Relaxed);
+
+        if elapsed > 0.0 {
+            info.rx_rate = (current_rx.saturating_sub(last_rx)) as f64 / elapsed;
+            info.tx_rate = (current_tx.saturating_sub(last_tx)) as f64 / elapsed;
+        }
+
+        conn.last_rx_bytes.store(current_rx, Ordering::Relaxed);
+        conn.last_tx_bytes.store(current_tx, Ordering::Relaxed);
+        *conn.last_rate_time.lock().unwrap() = now;
     }
 
     /// 获取指定连接的状态
@@ -830,6 +931,7 @@ impl NetworkManager {
         if let Some(c) = conns.get(connection_id) {
             let mut info = c.info.lock().await.clone();
             info.bytes_received = c.bytes_received_counter.load(Ordering::Relaxed);
+            Self::compute_rates(c, &mut info);
             Ok(info)
         } else {
             Err(format!("连接 {} 不存在", connection_id))
@@ -843,6 +945,7 @@ impl NetworkManager {
         for c in conns.values() {
             let mut info = c.info.lock().await.clone();
             info.bytes_received = c.bytes_received_counter.load(Ordering::Relaxed);
+            Self::compute_rates(c, &mut info);
             result.push(info);
         }
         result

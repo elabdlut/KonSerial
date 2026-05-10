@@ -28,10 +28,25 @@ pub fn run() {
     
     // 初始化数据日志管理器（SQLite）
     let db_path = default_db_path();
-    let data_logger = Arc::new(
-        DataLogger::new(&db_path).expect("初始化数据库失败")
-    );
-    log_info!(&format!("数据库已初始化: {}", db_path.display()));
+    let data_logger = match tokio::runtime::Runtime::new()
+        .expect("创建 tokio runtime 失败")
+        .block_on(DataLogger::new(&db_path))
+    {
+        Ok(logger) => {
+            log_info!(&format!("数据库已初始化: {}", db_path.display()));
+            Arc::new(logger)
+        }
+        Err(e) => {
+            log_error!(&format!("数据库初始化失败: {}，尝试使用临时数据库", e));
+            let tmp_path = std::env::temp_dir().join("konserial_data.db");
+            Arc::new(
+                tokio::runtime::Runtime::new()
+                    .expect("创建 tokio runtime 失败")
+                    .block_on(DataLogger::new(&tmp_path))
+                    .expect("临时数据库也无法初始化")
+            )
+        }
+    };
     
     // 初始化串口管理器（注入 DataLogger）
     let port_manager = Arc::new(Mutex::new(PortManager::new(data_logger.clone())));
@@ -41,12 +56,18 @@ pub fn run() {
 
     log_info!("应用启动成功");
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_opener::init());
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        builder = builder.plugin(tauri_plugin_cli::init());
+    }
+
+    builder
         // 注册全局状态
         .manage(port_manager)
         .manage(data_logger)
@@ -70,6 +91,8 @@ pub fn run() {
             crate::serial::commands::send_serial_data_with_crc,
             crate::serial::commands::send_serial_file,
             crate::serial::commands::is_serial_connected,
+            crate::serial::commands::set_serial_dtr,
+            crate::serial::commands::set_serial_rts,
             // 网络调试命令
             crate::network::commands::open_network_connection,
             crate::network::commands::close_network_connection,

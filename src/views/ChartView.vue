@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated, nextTick } from 'vue'
 import {
   NButton, NSpace, NIcon, NSwitch, NSlider, NInputNumber, NSelect,
   NTooltip, NDivider, NTag, NCheckbox, NCheckboxGroup,
@@ -138,9 +138,9 @@ const parseLine = (line: string, time: number) => {
 // 处理接收缓存中的新数据
 const processNewData = () => {
   const buffer = receivedBuffer.value
-  // 如果缓冲区被裁剪导致索引越界，重置索引
+  // 如果缓冲区被裁剪导致索引越界，重置索引到最后位置
   if (lastProcessedIndex > buffer.length) {
-    lastProcessedIndex = buffer.length
+    lastProcessedIndex = Math.max(0, buffer.length - 1)
   }
   while (lastProcessedIndex < buffer.length) {
     const item = buffer[lastProcessedIndex]
@@ -223,9 +223,14 @@ const drawChart = () => {
   ctx.fillStyle = bgColor
   ctx.fillRect(0, 0, W, H)
 
+  // 从 CSS 变量读取图表配色
+  const chartGrid = getComputedStyle(canvas).getPropertyValue('--chart-grid').trim() || '#e8e8e8'
+  const chartAxis = getComputedStyle(canvas).getPropertyValue('--chart-axis').trim() || '#ccc'
+  const chartLabel = getComputedStyle(canvas).getPropertyValue('--chart-label').trim() || '#999'
+
   // 绘制网格
   if (gridEnabled.value) {
-    ctx.strokeStyle = '#e8e8e8'
+    ctx.strokeStyle = chartGrid
     ctx.lineWidth = 0.5
     // 水平网格线 (5 lines)
     for (let i = 0; i <= 5; i++) {
@@ -246,7 +251,7 @@ const drawChart = () => {
   }
 
   // 绘制坐标轴
-  ctx.strokeStyle = '#ccc'
+  ctx.strokeStyle = chartAxis
   ctx.lineWidth = 1
   ctx.beginPath()
   ctx.moveTo(pad.left, pad.top)
@@ -255,7 +260,7 @@ const drawChart = () => {
   ctx.stroke()
 
   // Y 轴标签
-  ctx.fillStyle = '#999'
+  ctx.fillStyle = chartLabel
   ctx.font = '11px SF Mono, Monaco, monospace'
   ctx.textAlign = 'right'
   ctx.textBaseline = 'middle'
@@ -401,14 +406,18 @@ const exportData = () => {
     csv += row.join(',') + '\n'
   }
 
-  const blob = new Blob([csv], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `chart_data_${Date.now()}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-  message.success(t('chart.exported'))
+  let url: string | null = null
+  try {
+    const blob = new Blob([csv], { type: 'text/csv' })
+    url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `chart_data_${Date.now()}.csv`
+    a.click()
+    message.success(t('chart.exported'))
+  } finally {
+    if (url) URL.revokeObjectURL(url)
+  }
 }
 
 // 导出图表为 PNG — 直接从 canvas 导出
@@ -549,23 +558,42 @@ watch(chartConnectionId, () => {
   clearChart()
 })
 
-onMounted(() => {
+const cleanupChart = () => {
+  window.removeEventListener('resize', onResize)
+  window.removeEventListener('mousemove', handleMouseMove)
+  window.removeEventListener('mouseup', handleMouseUp)
+  if (pendingRedraw !== null) {
+    cancelAnimationFrame(pendingRedraw)
+    pendingRedraw = null
+  }
+  stopAnimation()
+  if (processingInterval !== null) {
+    clearInterval(processingInterval)
+    processingInterval = null
+  }
+}
+
+const initChart = () => {
   window.addEventListener('resize', onResize)
   window.addEventListener('mousemove', handleMouseMove)
   window.addEventListener('mouseup', handleMouseUp)
   nextTick(drawChart)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', onResize)
-  window.removeEventListener('mousemove', handleMouseMove)
-  window.removeEventListener('mouseup', handleMouseUp)
-  if (pendingRedraw !== null) cancelAnimationFrame(pendingRedraw)
-  stopAnimation()
-  if (processingInterval !== null) {
-    clearInterval(processingInterval)
+  // 如果之前在运行状态，恢复动画和数据处理
+  if (isRunning.value) {
+    if (processingInterval === null) {
+      processingInterval = window.setInterval(processNewData, 50)
+    }
+    startAnimation()
   }
-})
+}
+
+onMounted(initChart)
+
+onUnmounted(cleanupChart)
+
+// keep-alive 生命周期：切换标签页时暂停/恢复，避免资源泄漏
+onActivated(initChart)
+onDeactivated(cleanupChart)
 </script>
 
 <template>
@@ -589,7 +617,7 @@ onUnmounted(() => {
       <div class="config-section">
         <div class="section-title">
           <NIcon :component="AnalyticsOutline" size="16" />
-          <span>目标连接</span>
+          <span>{{ t('chart.targetConnection') }}</span>
         </div>
         <NSelect
           v-model:value="chartConnectionId"
@@ -819,7 +847,7 @@ onUnmounted(() => {
   border-radius: 20px;
   transition: all 0.3s;
 }
-.status-indicator.running { background: #e3f2fd; }
+.status-indicator.running { background: var(--chart-running-bg); }
 
 .status-dot {
   width: 8px; height: 8px;
@@ -827,7 +855,7 @@ onUnmounted(() => {
   background: #bbb;
 }
 .status-indicator.running .status-dot {
-  background: #1976d2;
+  background: var(--chart-running-dot);
   animation: pulse 1.5s infinite;
 }
 
@@ -937,7 +965,7 @@ onUnmounted(() => {
   position: absolute;
   bottom: 16px;
   right: 16px;
-  background: #1976d2;
+  background: var(--chart-running-dot);
   color: white;
   padding: 6px 16px;
   border-radius: 20px;

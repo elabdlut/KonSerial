@@ -13,6 +13,7 @@ const zhCN: Messages = {
   'nav.history': '历史记录',
   'nav.settings': '设置',
   'app.subtitle': '串口调试工具',
+  'common.cancel': '取消',
 
   // === SerialView ===
   'serial.connected': '已连接',
@@ -159,6 +160,7 @@ const zhCN: Messages = {
   'chart.noConnection': '请先连接',
   'chart.selectConnection': '选择连接',
   'chart.goLive': '回到实时',
+  'chart.targetConnection': '目标连接',
 
   // === ScriptView ===
   'script.files': '脚本文件',
@@ -239,6 +241,7 @@ const enUS: Messages = {
   'nav.history': 'History',
   'nav.settings': 'Settings',
   'app.subtitle': 'Serial Debug Tool',
+  'common.cancel': 'Cancel',
 
   // === SerialView ===
   'serial.connected': 'Connected',
@@ -385,6 +388,7 @@ const enUS: Messages = {
   'chart.noConnection': 'Please connect first',
   'chart.selectConnection': 'Select connection',
   'chart.goLive': 'Go Live',
+  'chart.targetConnection': 'Target Connection',
 
   // === ScriptView ===
   'script.files': 'Scripts',
@@ -482,16 +486,5 @@ export function t(key: string, ...args: (string | number)[]): string {
  * 使用方式: const t = useI18n()  然后在模板中 {{ t('key') }}
  */
 export function useI18n() {
-  return computed(() => {
-    // 依赖 language.value 触发响应式更新
-    const _lang = language.value
-    return (key: string, ...args: (string | number)[]) => {
-      const messages = locales[_lang] || zhCN
-      let text = messages[key] ?? zhCN[key] ?? key
-      args.forEach((arg, i) => {
-        text = text.replace(`{${i}}`, String(arg))
-      })
-      return text
-    }
-  })
+  return computed(() => (key: string, ...args: (string | number)[]) => t(key, ...args))
 }

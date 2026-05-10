@@ -6,15 +6,15 @@ use tauri::State;
 
 /// 获取所有历史会话列表
 #[tauri::command]
-pub fn get_sessions(
+pub async fn get_sessions(
     logger: State<'_, Arc<DataLogger>>,
 ) -> Result<Vec<SessionInfo>, String> {
-    logger.get_sessions()
+    logger.get_sessions().await
 }
 
 /// 获取指定会话的数据记录
 #[tauri::command]
-pub fn get_session_data(
+pub async fn get_session_data(
     logger: State<'_, Arc<DataLogger>>,
     session_id: i64,
     direction: Option<String>,
@@ -24,25 +24,25 @@ pub fn get_session_data(
     logger.get_session_data(
         session_id,
         direction,
-        limit.unwrap_or(10000),
+        limit.unwrap_or(1000),
         offset.unwrap_or(0),
-    )
+    ).await
 }
 
 /// 删除指定会话及其所有数据
 #[tauri::command]
-pub fn delete_session(
+pub async fn delete_session(
     logger: State<'_, Arc<DataLogger>>,
     session_id: i64,
 ) -> Result<(), String> {
-    logger.delete_session(session_id)
+    logger.delete_session(session_id).await
 }
 
 /// 导出指定会话为 CSV 格式
 #[tauri::command]
-pub fn export_session_csv(
+pub async fn export_session_csv(
     logger: State<'_, Arc<DataLogger>>,
     session_id: i64,
 ) -> Result<String, String> {
-    logger.export_session_csv(session_id)
+    logger.export_session_csv(session_id).await
 }

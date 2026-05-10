@@ -3,11 +3,13 @@ import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 
 // 配置接口定义
+export type NewlineType = 'none' | '\n' | '\r\n'
+
 export interface QuickCommand {
   name: string
   content: string
   is_hex: boolean
-  append_newline: string
+  append_newline: NewlineType
 }
 
 interface SerialConfig {
@@ -61,12 +63,14 @@ export interface AppConfig {
 export const appConfig = ref<AppConfig | null>(null)
 
 // 加载配置
-export async function loadConfig() {
+export async function loadConfig(): Promise<boolean> {
   try {
     appConfig.value = await invoke<AppConfig>('load_config')
     console.log('配置已加载:', appConfig.value)
+    return true
   } catch (error) {
     console.error('加载配置失败:', error)
+    return false
   }
 }
 

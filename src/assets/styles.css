@@ -22,6 +22,23 @@
   --text-muted: #999999;
   --border-color: #e8e8e8;
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
+  /* 终端主题（默认暗色终端风格，但可通过变量覆盖） */
+  --terminal-header-bg: #252526;
+  --terminal-filter-bg: #1e1e1e;
+  --terminal-border: #333333;
+  --terminal-text: #d4d4d4;
+  --terminal-text-muted: #666666;
+  --terminal-empty-text: #555555;
+  --terminal-tx-color: #64b5f6;
+  --terminal-rx-color: #81c784;
+  --terminal-system-color: #ffb74d;
+  --terminal-error-color: #e57373;
+  /* 图表主题 */
+  --chart-grid: #e8e8e8;
+  --chart-axis: #cccccc;
+  --chart-label: #999999;
+  --chart-running-bg: #e3f2fd;
+  --chart-running-dot: #1976d2;
 }
 
 html.dark {
@@ -34,6 +51,16 @@ html.dark {
   --text-muted: #707070;
   --border-color: #3a3a3e;
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3);
+  /* 暗色模式下终端保持暗色但略作调整 */
+  --terminal-header-bg: #1e1e22;
+  --terminal-filter-bg: #16161a;
+  --terminal-border: #3a3a3e;
+  /* 暗色图表 */
+  --chart-grid: #3a3a3e;
+  --chart-axis: #555555;
+  --chart-label: #888888;
+  --chart-running-bg: #1a2a3a;
+  --chart-running-dot: #64b5f6;
 }
 
 /* 自定义全局样式 */

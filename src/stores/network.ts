@@ -28,6 +28,9 @@ export interface NetConnectionInfo {
   config: NetConnectionConfig
   bytes_received: number
   bytes_sent: number
+  rx_rate: number
+  tx_rate: number
+  connected_at: string | null
   last_error: string | null
   created_at: string
 }
@@ -162,8 +165,7 @@ watch(
         delete reconnectAttemptCounts[conn.connection_id]
       }
     }
-  },
-  { deep: true }
+  }
 )
 
 // ========== 工具函数 ==========
@@ -241,7 +243,7 @@ export function updateTabName(tabId: string, name: string) {
 }
 
 export function generateConnectionId(): string {
-  return `net_conn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  return `net_conn_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
 }
 
 // ========== 终端日志状态 ==========
@@ -401,7 +403,11 @@ export async function sendNetworkData(
   try {
     let bytes: number[]
     if (isHex) {
-      bytes = data.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || []
+      const cleaned = data.replace(/\s/g, '')
+      if (cleaned.length % 2 !== 0) {
+        throw new Error('Hex 数据长度必须为偶数')
+      }
+      bytes = cleaned.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || []
     } else {
       bytes = Array.from(new TextEncoder().encode(data))
     }

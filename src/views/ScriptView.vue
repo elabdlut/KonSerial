@@ -13,6 +13,10 @@ import {
 } from '@vicons/ionicons5'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import { Codemirror } from 'vue-codemirror'
+import { javascript } from '@codemirror/lang-javascript'
+import { oneDark } from '@codemirror/theme-one-dark'
+import { isDark } from '@/stores/settings'
 import {
   activeConnections as serialActiveConnections, type ConnectionInfo,
 } from '@/stores/serial'
@@ -29,15 +33,22 @@ import { t } from '@/stores/i18n'
 
 const message = useMessage()
 
+// CodeMirror 配置
+const cmExtensions = computed(() => {
+  const ext: any[] = [javascript()]
+  if (isDark.value) ext.push(oneDark)
+  return ext
+})
+
 // ========== 连接选择（多选） ==========
 
 const connectionOptions = computed(() => {
   const serial = serialActiveConnections.value.map((c: ConnectionInfo) => ({
-    label: `${c.config.port_name} (${c.status === 'Connected' ? '已连接' : '未连接'})`,
+    label: `${c.config.port_name} (${c.status === 'Connected' ? t('serial.connected') : t('serial.disconnected')})`,
     value: c.connection_id,
   }))
   const net = networkActiveConnections.value.map((c) => ({
-    label: `${c.config.protocol.toUpperCase()} ${c.config.host}:${c.config.port} (${c.status === 'Connected' ? '已连接' : '未连接'})`,
+    label: `${c.config.protocol.toUpperCase()} ${c.config.host}:${c.config.port} (${c.status === 'Connected' ? t('serial.connected') : t('serial.disconnected')})`,
     value: c.connection_id,
   }))
   return [...serial, ...net]
@@ -113,7 +124,7 @@ const openFile = async () => {
       return
     }
 
-    const id = `file_${Date.now()}_${Date.now()}`
+    const id = `file_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
     scriptFiles.value.push({ id, name, path: filePath, content, modified: false })
     activeScriptId.value = id
     selectedTemplate.value = null
@@ -282,16 +293,14 @@ const handleRun = () => {
       </div>
 
       <div class="editor-container">
-        <div class="line-numbers">
-          <div v-for="n in lineCount" :key="n">{{ n }}</div>
-        </div>
-        <textarea
+        <Codemirror
           v-model="scriptContent"
-          @input="onContentChange"
-          class="code-editor"
-          spellcheck="false"
+          :extensions="cmExtensions"
           :disabled="scriptIsRunning"
-        ></textarea>
+          :indent-with-tab="true"
+          :tab-size="2"
+          style="height: 100%; width: 100%;"
+        />
       </div>
     </main>
 
@@ -433,7 +442,7 @@ const handleRun = () => {
 .target-bar {
   padding: 10px 16px;
   border-bottom: 1px solid var(--border-color);
-  background: #fafafa;
+  background: var(--bg-page);
 }
 
 .editor-container {
@@ -441,35 +450,11 @@ const handleRun = () => {
   display: flex;
   overflow: hidden;
 }
-.line-numbers {
-  width: 48px;
-  background: var(--bg-page);
-  padding: 16px 8px;
-  text-align: right;
-  font-family: 'SF Mono', Monaco, Consolas, monospace;
-  font-size: var(--font-sm);
-  line-height: 1.6;
-  color: var(--text-muted);
-  border-right: 1px solid var(--border-color);
-  overflow: hidden;
-  user-select: none;
+.editor-container .cm-editor {
+  height: 100%;
 }
-.code-editor {
-  flex: 1;
-  padding: 16px;
-  border: none;
+.editor-container .cm-focused {
   outline: none;
-  resize: none;
-  font-family: 'SF Mono', Monaco, Consolas, monospace;
-  font-size: var(--font-sm);
-  line-height: 1.6;
-  color: var(--text-primary);
-  background: var(--bg-card);
-  tab-size: 2;
-}
-.code-editor:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 /* 右侧输出面板 */

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from 'vue'
+
 import {
   NButton, NIcon, NTooltip,
 } from 'naive-ui'
@@ -15,8 +16,6 @@ import {
   removeNetworkTab,
   linkTabToConnection,
   updateTabName,
-  startNetworkDataListener,
-  stopNetworkDataListener,
   startStatusPolling,
   stopStatusPolling,
   updateGlobalInfo,
@@ -29,14 +28,12 @@ onMounted(async () => {
   if (networkTabs.value.length === 0) {
     addNetworkTab()
   }
-  await startNetworkDataListener()
   startStatusPolling(1000)
   await updateGlobalInfo()
 })
 
 onUnmounted(() => {
   stopStatusPolling()
-  stopNetworkDataListener()
 })
 
 watch(activeConnections, (connections) => {

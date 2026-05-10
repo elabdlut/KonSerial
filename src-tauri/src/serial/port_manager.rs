@@ -7,8 +7,9 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
+use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
 // ========== 串口配置（完整参数）==========
@@ -88,6 +89,9 @@ pub struct ConnectionInfo {
     pub config: SerialPortConfig,
     pub bytes_received: u64,
     pub bytes_sent: u64,
+    pub rx_rate: f64,        // 接收速率 (bytes/s)
+    pub tx_rate: f64,        // 发送速率 (bytes/s)
+    pub connected_at: Option<String>, // 连接成功时间
     pub last_error: Option<String>,
     pub created_at: String,  // 创建时间戳
 }
@@ -107,6 +111,10 @@ struct SerialConnection {
     running: Arc<AtomicBool>,
     bytes_received_counter: Arc<AtomicU64>,
     session_id: i64,
+    // 速率计算状态
+    last_rx_bytes: AtomicU64,
+    last_tx_bytes: AtomicU64,
+    last_rate_time: std::sync::Mutex<Instant>,
 }
 
 /// 全局运行时信息（所有串口的状态）
@@ -223,6 +231,7 @@ impl PortManager {
                 // 创建数据记录会话
                 let session_id = self.data_logger
                     .create_session(&connection_id, &config.port_name, config.baud_rate)
+                    .await
                     .map_err(|e| format!("创建数据记录会话失败: {}", e))?;
                 
                 // 克隆串口用于读取循环
@@ -262,6 +271,7 @@ impl PortManager {
                     }
                 });
 
+                let now = Instant::now();
                 let connection = SerialConnection {
                     port: Arc::new(Mutex::new(port)),
                     info: ConnectionInfo {
@@ -270,6 +280,9 @@ impl PortManager {
                         config: config.clone(),
                         bytes_received: 0,
                         bytes_sent: 0,
+                        rx_rate: 0.0,
+                        tx_rate: 0.0,
+                        connected_at: Some(chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()),
                         last_error: None,
                         created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                     },
@@ -277,6 +290,9 @@ impl PortManager {
                     running,
                     bytes_received_counter: bytes_counter,
                     session_id,
+                    last_rx_bytes: AtomicU64::new(0),
+                    last_tx_bytes: AtomicU64::new(0),
+                    last_rate_time: std::sync::Mutex::new(now),
                 };
                 
                 self.connections.write().await.insert(connection_id.clone(), connection);
@@ -309,7 +325,9 @@ impl PortManager {
                     bytes_counter.fetch_add(n as u64, Ordering::Relaxed);
                     let data = buf[..n].to_vec();
                     // 持久化 RX 数据到 SQLite
-                    let _ = data_logger.log_rx(session_id, &data);
+                    let _ = Handle::current().block_on(async {
+                        data_logger.log_rx(session_id, &data).await
+                    });
                     // 推送到前端
                     let _ = app_handle.emit("serial-data", SerialDataPayload {
                         connection_id: connection_id.clone(),
@@ -331,7 +349,7 @@ impl PortManager {
             conn.running.store(false, Ordering::Relaxed);
             conn.read_task.abort();
             // 结束数据记录会话
-            let _ = self.data_logger.end_session(conn.session_id);
+            let _ = self.data_logger.end_session(conn.session_id).await;
             log_info!(&format!("[{}] 串口已关闭", connection_id));
             Ok(())
         } else {
@@ -346,11 +364,33 @@ impl PortManager {
         for (_, conn) in conns.drain() {
             conn.running.store(false, Ordering::Relaxed);
             conn.read_task.abort();
-            let _ = self.data_logger.end_session(conn.session_id);
+            let _ = self.data_logger.end_session(conn.session_id).await;
         }
         log_info!(&format!("已关闭所有串口连接 ({}个)", count));
     }
     
+    /// 计算并更新连接速率
+    fn compute_rates(conn: &SerialConnection, info: &mut ConnectionInfo) {
+        let now = Instant::now();
+        let last_time = *conn.last_rate_time.lock().unwrap();
+        let elapsed = now.duration_since(last_time).as_secs_f64();
+
+        let current_rx = conn.bytes_received_counter.load(Ordering::Relaxed);
+        let current_tx = info.bytes_sent;
+        let last_rx = conn.last_rx_bytes.load(Ordering::Relaxed);
+        let last_tx = conn.last_tx_bytes.load(Ordering::Relaxed);
+
+        if elapsed > 0.0 {
+            info.rx_rate = (current_rx.saturating_sub(last_rx)) as f64 / elapsed;
+            info.tx_rate = (current_tx.saturating_sub(last_tx)) as f64 / elapsed;
+        }
+
+        // 更新上次记录
+        conn.last_rx_bytes.store(current_rx, Ordering::Relaxed);
+        conn.last_tx_bytes.store(current_tx, Ordering::Relaxed);
+        *conn.last_rate_time.lock().unwrap() = now;
+    }
+
     /// 获取指定连接的状态
     pub async fn get_connection_info(&self, connection_id: &str) -> Result<ConnectionInfo, String> {
         let conns = self.connections.read().await;
@@ -359,6 +399,7 @@ impl PortManager {
             .map(|c| {
                 let mut info = c.info.clone();
                 info.bytes_received = c.bytes_received_counter.load(Ordering::Relaxed);
+                Self::compute_rates(c, &mut info);
                 info
             })
             .ok_or_else(|| format!("连接 {} 不存在", connection_id))
@@ -370,6 +411,7 @@ impl PortManager {
         conns.values().map(|c| {
             let mut info = c.info.clone();
             info.bytes_received = c.bytes_received_counter.load(Ordering::Relaxed);
+            Self::compute_rates(c, &mut info);
             info
         }).collect()
     }
@@ -397,7 +439,7 @@ impl PortManager {
                 Ok(bytes) => {
                     conn.info.bytes_sent += bytes as u64;
                     // 持久化 TX 数据到 SQLite
-                    let _ = self.data_logger.log_tx(conn.session_id, &data[..bytes]);
+                    let _ = self.data_logger.log_tx(conn.session_id, &data[..bytes]).await;
                     Ok(bytes)
                 }
                 Err(e) => {
@@ -420,37 +462,75 @@ impl PortManager {
         chunk_size: usize,
         delay_ms: u64,
     ) -> Result<usize, String> {
-        let mut conns = self.connections.write().await;
+        let chunk_size = chunk_size.max(1);
+        let mut total_sent = 0usize;
+        let total_len = data.len();
+        let mut offset = 0usize;
 
-        if let Some(conn) = conns.get_mut(connection_id) {
-            let mut port = conn.port.lock().await;
-            let mut total_sent = 0usize;
-            let chunk_size = chunk_size.max(1);
+        while offset < total_len {
+            let end = (offset + chunk_size).min(total_len);
+            let chunk = &data[offset..end];
 
-            for chunk in data.chunks(chunk_size) {
-                match port.write(chunk) {
-                    Ok(bytes) => {
-                        total_sent += bytes;
+            {
+                let mut conns = self.connections.write().await;
+                if let Some(conn) = conns.get_mut(connection_id) {
+                    let mut port = conn.port.lock().await;
+                    match port.write(chunk) {
+                        Ok(bytes) => {
+                            total_sent += bytes;
+                        }
+                        Err(e) => {
+                            let error_msg = e.to_string();
+                            conn.info.status = PortStatus::Error(error_msg.clone());
+                            conn.info.last_error = Some(error_msg.clone());
+                            return Err(error_msg);
+                        }
                     }
-                    Err(e) => {
-                        let error_msg = e.to_string();
-                        conn.info.status = PortStatus::Error(error_msg.clone());
-                        conn.info.last_error = Some(error_msg.clone());
-                        return Err(error_msg);
-                    }
+                } else {
+                    return Err(format!("连接 {} 不存在", connection_id));
                 }
+            } // 锁在此处释放，允许其他命令在 sleep 期间执行
 
-                if total_sent < data.len() {
-                    drop(port);
-                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                    port = conn.port.lock().await;
-                }
+            offset += chunk_size;
+            if offset < total_len {
+                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
             }
+        }
 
-            conn.info.bytes_sent += total_sent as u64;
-            // 持久化 TX 数据到 SQLite（只记录摘要）
-            let _ = self.data_logger.log_tx(conn.session_id, &format!("[FILE] {} bytes", total_sent).into_bytes());
-            Ok(total_sent)
+        // 更新发送统计
+        {
+            let mut conns = self.connections.write().await;
+            if let Some(conn) = conns.get_mut(connection_id) {
+                conn.info.bytes_sent += total_sent as u64;
+                // 持久化 TX 数据到 SQLite（只记录摘要）
+                let _ = self.data_logger.log_tx(conn.session_id, &format!("[FILE] {} bytes", total_sent).into_bytes()).await;
+            }
+        }
+
+        Ok(total_sent)
+    }
+
+    /// 设置 DTR 信号
+    pub async fn set_dtr(&self, connection_id: &str, level: bool) -> Result<(), String> {
+        let conns = self.connections.read().await;
+        if let Some(conn) = conns.get(connection_id) {
+            let mut port = conn.port.lock().await;
+            port.write_data_terminal_ready(level)
+                .map_err(|e| format!("设置 DTR 失败: {}", e))?;
+            Ok(())
+        } else {
+            Err(format!("连接 {} 不存在", connection_id))
+        }
+    }
+
+    /// 设置 RTS 信号
+    pub async fn set_rts(&self, connection_id: &str, level: bool) -> Result<(), String> {
+        let conns = self.connections.read().await;
+        if let Some(conn) = conns.get(connection_id) {
+            let mut port = conn.port.lock().await;
+            port.write_request_to_send(level)
+                .map_err(|e| format!("设置 RTS 失败: {}", e))?;
+            Ok(())
         } else {
             Err(format!("连接 {} 不存在", connection_id))
         }

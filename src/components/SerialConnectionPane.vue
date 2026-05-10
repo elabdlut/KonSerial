@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import {
   NButton, NSelect, NSpace, NInput, NInputNumber, NTag, NIcon, NTooltip, NSwitch,
   NScrollbar, NDivider, NInputGroup, NCheckboxGroup, NCheckbox,
@@ -28,11 +28,16 @@ import {
   setConnectionDisplay,
   type SerialPortConfig,
 } from '@/stores/serial'
+import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { readFile } from '@tauri-apps/plugin-fs'
 import { t } from '@/stores/i18n'
 import { appConfig, saveConfig } from '@/stores/config'
-import type { QuickCommand } from '@/stores/config'
+import type { QuickCommand, NewlineType } from '@/stores/config'
+import { formatHex } from '@/utils/hex'
+import { formatRate, formatDuration } from '@/utils/format'
+import ConnectionTerminal from './ConnectionTerminal.vue'
+import ConnectionSendPane from './ConnectionSendPane.vue'
 
 const props = defineProps<{
   tabId: string
@@ -63,7 +68,9 @@ const onConfigChange = () => {
 const loading = ref(false)
 const hexSend = ref(false)
 const sendText = ref('')
-const appendNewline = ref('none')
+const appendNewline = ref<NewlineType>('none')
+const dtrEnabled = ref(false)
+const rtsEnabled = ref(false)
 const selectedCrc = ref('none')
 
 const crcOptions = [
@@ -98,11 +105,37 @@ const isConnected = computed(() => {
 })
 
 const connectionStats = computed(() => {
-  if (!connectionInfo.value) return { sent: 0, received: 0 }
+  if (!connectionInfo.value) {
+    return { sent: 0, received: 0, txRate: 0, rxRate: 0, connectedAt: null }
+  }
   return {
     sent: connectionInfo.value.bytes_sent,
-    received: connectionInfo.value.bytes_received
+    received: connectionInfo.value.bytes_received,
+    txRate: connectionInfo.value.tx_rate,
+    rxRate: connectionInfo.value.rx_rate,
+    connectedAt: connectionInfo.value.connected_at,
   }
+})
+
+// 连接时长刷新定时器
+const durationNow = ref(Date.now())
+let durationTimer: number | null = null
+watch(isConnected, (connected) => {
+  if (connected) {
+    durationTimer = window.setInterval(() => { durationNow.value = Date.now() }, 1000)
+  } else if (durationTimer !== null) {
+    clearInterval(durationTimer)
+    durationTimer = null
+  }
+}, { immediate: true })
+onUnmounted(() => {
+  if (durationTimer !== null) clearInterval(durationTimer)
+})
+
+const connectionDuration = computed(() => {
+  // 依赖 durationNow 以确保每秒重新计算
+  durationNow.value
+  return formatDuration(connectionStats.value.connectedAt)
 })
 
 // 终端日志过滤
@@ -151,6 +184,10 @@ const baudRateOptions = [
   { label: '230400', value: 230400 },
   { label: '460800', value: 460800 },
   { label: '921600', value: 921600 },
+  { label: '1500000', value: 1500000 },
+  { label: '2000000', value: 2000000 },
+  { label: '3000000', value: 3000000 },
+  { label: '4000000', value: 4000000 },
 ]
 
 const dataBitsOptions = computed(() => [
@@ -176,16 +213,11 @@ const encodingOptions = [
   { label: 'GBK', value: 'gbk' },
 ]
 
-const newlineOptions = computed(() => [
+const newlineOptions = computed<{ label: string; value: NewlineType }[]>(() => [
   { label: t('serial.newlineNone'), value: 'none' },
   { label: 'LF (\\n)', value: '\n' },
   { label: 'CRLF (\\r\\n)', value: '\r\n' },
 ])
-
-const formatHex = (text: string) => {
-  const bytes = new TextEncoder().encode(text)
-  return Array.from(bytes).map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ')
-}
 
 const terminalLogs = computed(() => {
   return props.connectionId ? getConnectionLog(props.connectionId) : []
@@ -284,6 +316,29 @@ const handleSendFile = async () => {
   }
 }
 
+// ========== DTR / RTS 控制 ==========
+const toggleDtr = async () => {
+  if (!props.connectionId) return
+  try {
+    dtrEnabled.value = !dtrEnabled.value
+    await invoke('set_serial_dtr', { connectionId: props.connectionId, level: dtrEnabled.value })
+  } catch (e) {
+    message.error(`DTR 设置失败: ${e}`)
+    dtrEnabled.value = !dtrEnabled.value
+  }
+}
+
+const toggleRts = async () => {
+  if (!props.connectionId) return
+  try {
+    rtsEnabled.value = !rtsEnabled.value
+    await invoke('set_serial_rts', { connectionId: props.connectionId, level: rtsEnabled.value })
+  } catch (e) {
+    message.error(`RTS 设置失败: ${e}`)
+    rtsEnabled.value = !rtsEnabled.value
+  }
+}
+
 // ========== 快捷命令 ==========
 const quickCmdForm = ref({ name: '', content: '', isHex: false })
 const showQuickCmdForm = ref(false)
@@ -303,28 +358,25 @@ const handleQuickSend = async (cmd: QuickCommand) => {
   }
 }
 
-const addQuickCommand = async () => {
-  if (!quickCmdForm.value.name.trim() || !quickCmdForm.value.content.trim()) return
-  const list = appConfig.value?.serial?.quick_commands || []
-  list.push({
-    name: quickCmdForm.value.name.trim(),
-    content: quickCmdForm.value.content,
-    is_hex: quickCmdForm.value.isHex,
+const addQuickCommand = async (...args: [string, string, boolean]) => {
+  const [name, content, isHex] = args
+  if (!name.trim() || !content.trim()) return
+  const newCmd: QuickCommand = {
+    name: name.trim(),
+    content: content,
+    is_hex: isHex,
     append_newline: appendNewline.value,
-  })
+  }
   if (appConfig.value) {
-    appConfig.value.serial.quick_commands = [...list]
+    appConfig.value.serial.quick_commands = [...quickCommands.value, newCmd]
     await saveConfig()
   }
-  quickCmdForm.value = { name: '', content: '', isHex: false }
-  showQuickCmdForm.value = false
 }
 
 const removeQuickCommand = async (index: number) => {
-  const list = appConfig.value?.serial?.quick_commands || []
-  list.splice(index, 1)
   if (appConfig.value) {
-    appConfig.value.serial.quick_commands = [...list]
+    const newList = quickCommands.value.filter((_, i) => i !== index)
+    appConfig.value.serial.quick_commands = newList
     await saveConfig()
   }
 }
@@ -406,6 +458,7 @@ watch(() => filteredTerminalLogs.value.length, () => {
             v-model:value="localConfig.baud_rate"
             :options="baudRateOptions"
             :disabled="isConnected"
+            filterable
             size="small"
             @update:value="onConfigChange"
           />
@@ -492,6 +545,18 @@ watch(() => filteredTerminalLogs.value.length, () => {
         {{ isConnected ? t('serial.disconnect') : t('serial.connect') }}
       </NButton>
 
+      <!-- DTR / RTS 控制 -->
+      <div v-if="isConnected" class="signal-controls">
+        <NSpace justify="center">
+          <NButton size="small" :type="dtrEnabled ? 'primary' : 'default'" @click="toggleDtr">
+            DTR {{ dtrEnabled ? 'ON' : 'OFF' }}
+          </NButton>
+          <NButton size="small" :type="rtsEnabled ? 'primary' : 'default'" @click="toggleRts">
+            RTS {{ rtsEnabled ? 'ON' : 'OFF' }}
+          </NButton>
+        </NSpace>
+      </div>
+
       <div v-if="isConnected" class="stats-section">
         <NDivider style="margin: 20px 0 16px" />
         <div class="section-title">
@@ -507,175 +572,60 @@ watch(() => filteredTerminalLogs.value.length, () => {
             <span class="stat-label">RX</span>
             <span class="stat-value rx">{{ connectionStats.received }}</span>
           </div>
+          <div class="stat-item">
+            <span class="stat-label">↑ TX/s</span>
+            <span class="stat-value tx">{{ formatRate(connectionStats.txRate) }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">↓ RX/s</span>
+            <span class="stat-value rx">{{ formatRate(connectionStats.rxRate) }}</span>
+          </div>
+          <div class="stat-item" style="grid-column: span 2;">
+            <span class="stat-label">时长</span>
+            <span class="stat-value">{{ connectionDuration }}</span>
+          </div>
         </div>
       </div>
     </aside>
 
     <!-- 右侧主区域 -->
     <main class="main-area">
-      <div class="terminal-section">
-        <div class="terminal-header">
-          <div class="terminal-title">
-            <NIcon :component="SwapHorizontalOutline" size="18" />
-            <span>{{ t('serial.terminal') }}</span>
-            <NTag size="small" :bordered="false" type="info">{{ terminalLogs.length }}</NTag>
-          </div>
-          <NSpace align="center" :size="8">
-            <NSelect
-              v-model:value="display.encoding"
-              :options="encodingOptions"
-              size="small"
-              style="width: 90px"
-            />
-            <NSwitch v-model:value="display.hexDisplay" size="small">
-              <template #checked>HEX</template>
-              <template #unchecked>{{ t('serial.text') }}</template>
-            </NSwitch>
-            <NSwitch v-model:value="display.autoScroll" size="small">
-              <template #checked>{{ t('serial.scroll') }}</template>
-              <template #unchecked>{{ t('serial.scroll') }}</template>
-            </NSwitch>
-            <NButton size="small" quaternary @click="clearLog">
-              <template #icon><NIcon :component="TrashOutline" /></template>
-              {{ t('serial.clear') }}
-            </NButton>
-          </NSpace>
-        </div>
-
-        <div class="terminal-filter-bar">
-          <NInput
-            v-model:value="logFilterText"
-            :placeholder="t('serial.searchLog')"
-            size="tiny"
-            clearable
-            style="width: 140px"
-          />
-          <NCheckboxGroup v-model:value="logFilterTypes" size="small">
-            <NSpace :size="8">
-              <NCheckbox value="tx" label="TX" />
-              <NCheckbox value="rx" label="RX" />
-              <NCheckbox value="system" label="SYS" />
-              <NCheckbox value="error" label="ERR" />
-            </NSpace>
-          </NCheckboxGroup>
-          <NTag size="small" :bordered="false" type="info">{{ filteredTerminalLogs.length }} / {{ terminalLogs.length }}</NTag>
-        </div>
-
-        <NScrollbar ref="scrollbarRef" class="terminal-content">
-          <div class="terminal-body">
-            <div
-              v-for="(item, idx) in filteredTerminalLogs"
-              :key="idx"
-              class="log-line"
-              :class="item.type"
-            >
-              <span class="log-time">{{ item.time }}</span>
-              <span class="log-type">
-                {{ item.type === 'tx' ? 'TX' : item.type === 'rx' ? 'RX' : item.type === 'system' ? 'SYS' : 'ERR' }}
-              </span>
-              <span class="log-content">
-                {{ display.hexDisplay ? formatHex(item.content) : item.content }}
-              </span>
-            </div>
-            <div v-if="filteredTerminalLogs.length === 0" class="terminal-empty">
-              <NIcon :component="SwapHorizontalOutline" size="40" />
-              <p>{{ t('serial.emptyHint') }}</p>
-            </div>
-          </div>
-        </NScrollbar>
-      </div>
-
-      <div class="send-section">
-        <div class="send-options">
-          <NSpace align="center" :size="12">
-            <NSwitch v-model:value="hexSend" size="small">
-              <template #checked>{{ t('serial.hexSend') }}</template>
-              <template #unchecked>{{ t('serial.textSend') }}</template>
-            </NSwitch>
-            <NSelect
-              v-if="!hexSend"
-              v-model:value="appendNewline"
-              :options="newlineOptions"
-              size="small"
-              style="width: 120px"
-            />
-            <NSelect
-              v-model:value="selectedCrc"
-              :options="crcOptions"
-              size="small"
-              style="width: 120px"
-            />
-          </NSpace>
-        </div>
-
-        <!-- 快捷命令 -->
-        <div class="quick-commands-bar">
-          <div v-if="!showQuickCmdForm" class="quick-commands-list">
-            <NButton
-              v-for="(cmd, idx) in quickCommands"
-              :key="idx"
-              size="tiny"
-              quaternary
-              type="info"
-              :disabled="!isConnected"
-              @click="handleQuickSend(cmd)"
-            >
-              {{ cmd.name }}
-              <template #icon>
-                <NIcon :component="CloseOutline" @click.stop="removeQuickCommand(idx)" />
-              </template>
-            </NButton>
-            <NButton size="tiny" text @click="showQuickCmdForm = true">
-              + {{ t('serial.addQuickCmd') }}
-            </NButton>
-          </div>
-          <div v-else class="quick-command-form">
-            <NInput
-              v-model:value="quickCmdForm.name"
-              :placeholder="t('serial.cmdName')"
-              size="tiny"
-              style="width: 100px"
-            />
-            <NInput
-              v-model:value="quickCmdForm.content"
-              :placeholder="t('serial.cmdContent')"
-              size="tiny"
-              style="flex: 1"
-            />
-            <NSwitch v-model:value="quickCmdForm.isHex" size="small">
-              <template #checked>HEX</template>
-              <template #unchecked>TXT</template>
-            </NSwitch>
-            <NButton size="tiny" @click="addQuickCommand">{{ t('serial.addQuickCmd') }}</NButton>
-            <NButton size="tiny" text @click="showQuickCmdForm = false">取消</NButton>
-          </div>
-        </div>
-
-        <div class="send-input">
-          <NInput
-            v-model:value="sendText"
-            :disabled="!isConnected"
-            :placeholder="hexSend ? t('serial.hexPlaceholder') : t('serial.textPlaceholder')"
-            @keydown.enter="handleSend"
-            clearable
-          />
-          <NButton
-            type="primary"
-            :disabled="!isConnected || !sendText.trim()"
-            @click="handleSend"
-          >
-            <template #icon><NIcon :component="SendOutline" /></template>
-            {{ t('serial.send') }}
-          </NButton>
-          <NButton
-            :disabled="!isConnected"
-            @click="handleSendFile"
-          >
-            <template #icon><NIcon :component="DocumentOutline" /></template>
-            {{ t('serial.sendFile') }}
-          </NButton>
-        </div>
-      </div>
+      <ConnectionTerminal
+        :logs="terminalLogs"
+        :title="t('serial.terminal')"
+        :log-count="terminalLogs.length"
+        :empty-hint="t('serial.emptyHint')"
+        :clear-label="t('serial.clear')"
+        :search-placeholder="t('serial.searchLog')"
+        :encoding-options="encodingOptions"
+        @clear="clearLog"
+      />
+      <ConnectionSendPane
+        :is-connected="isConnected"
+        :send-disabled="!isConnected"
+        v-model:hex-send="hexSend"
+        v-model:send-text="sendText"
+        v-model:append-newline="appendNewline"
+        v-model:selected-crc="selectedCrc"
+        :show-newline="true"
+        :show-crc="true"
+        :show-file="true"
+        :newline-options="newlineOptions"
+        :crc-options="crcOptions"
+        :quick-commands="quickCommands"
+        :placeholder-hex="t('serial.hexPlaceholder')"
+        :placeholder-text="t('serial.textPlaceholder')"
+        :send-label="t('serial.send')"
+        :file-label="t('serial.sendFile')"
+        :add-quick-cmd-label="t('serial.addQuickCmd')"
+        :cmd-name-placeholder="t('serial.cmdName')"
+        :cmd-content-placeholder="t('serial.cmdContent')"
+        @send="handleSend"
+        @send-file="handleSendFile"
+        @add-quick-command="(name, content, isHex) => addQuickCommand(name, content, isHex)"
+        @remove-quick-command="removeQuickCommand"
+        @quick-send="handleQuickSend"
+      />
     </main>
   </div>
 </template>
@@ -836,134 +786,4 @@ watch(() => filteredTerminalLogs.value.length, () => {
   min-width: 0;
 }
 
-/* 终端区域 */
-.terminal-section {
-  flex: 1;
-  background: var(--bg-terminal);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-height: 0;
-}
-
-.terminal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: #252526;
-  border-bottom: 1px solid #333;
-}
-
-.terminal-filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  background: #1e1e1e;
-  border-bottom: 1px solid #333;
-}
-
-.terminal-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #ccc;
-  font-size: var(--font-base);
-  font-weight: 500;
-}
-
-.terminal-content {
-  flex: 1;
-  min-height: 0;
-}
-
-.terminal-body {
-  padding: 12px 16px;
-  min-height: 100%;
-}
-
-.log-line {
-  display: flex;
-  gap: 12px;
-  padding: 4px 0;
-  font-family: 'SF Mono', Monaco, Consolas, monospace;
-  font-size: var(--app-font-size, 13px);
-  line-height: 1.5;
-}
-
-.log-time {
-  color: #666;
-  flex-shrink: 0;
-}
-
-.log-type {
-  width: 32px;
-  flex-shrink: 0;
-  font-weight: 600;
-}
-
-.log-line.tx .log-type { color: #64b5f6; }
-.log-line.rx .log-type { color: #81c784; }
-.log-line.system .log-type { color: #ffb74d; }
-.log-line.error .log-type { color: #e57373; }
-
-.log-content {
-  color: #d4d4d4;
-  word-break: break-all;
-}
-
-.terminal-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 200px;
-  color: #555;
-  gap: 12px;
-}
-
-.terminal-empty p {
-  font-size: var(--font-base);
-}
-
-/* 发送区域 */
-.send-section {
-  background: var(--bg-card);
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: var(--shadow-card);
-}
-
-.send-options {
-  margin-bottom: 12px;
-}
-
-.send-input {
-  display: flex;
-  gap: 12px;
-}
-
-.send-input :deep(.n-input) {
-  flex: 1;
-}
-
-/* 快捷命令 */
-.quick-commands-bar {
-  margin-bottom: 12px;
-}
-
-.quick-commands-list {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.quick-command-form {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 </style>

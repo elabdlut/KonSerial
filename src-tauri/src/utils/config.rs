@@ -29,7 +29,8 @@ fn default_quick_commands() -> Vec<QuickCommand> {
 }
 
 /// 串口配置
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(default)]
 pub struct SerialConfig {
     pub port: String,
     pub baud_rate: u32,
@@ -62,7 +63,8 @@ fn default_max_reconnect_attempts() -> u32 {
 }
 
 /// 界面配置
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(default)]
 pub struct UiConfig {
     pub theme: String,
     pub language: String,
@@ -73,7 +75,8 @@ pub struct UiConfig {
 }
 
 /// 数据处理配置
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(default)]
 pub struct DataConfig {
     pub auto_save: bool,
     pub save_interval: u32,
@@ -94,7 +97,8 @@ fn default_network_config() -> NetworkConfig {
 }
 
 /// 网络配置
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(default)]
 pub struct NetworkConfig {
     pub protocol: String,
     pub host: String,
@@ -110,12 +114,12 @@ pub struct NetworkConfig {
 }
 
 /// 上层结构体
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(default)]
 pub struct AppConfig {
     pub serial: SerialConfig,
     pub ui: UiConfig,
     pub data: DataConfig,
-    #[serde(default = "default_network_config")]
     pub network: NetworkConfig,
     #[serde(skip)]
     pub config_path: Option<PathBuf>,
@@ -133,7 +137,12 @@ impl AppConfig {
                     cfg
                 }
                 Err(e) => {
-                    log_error!(&format!("加载失败:{}, 创建新配置",e));
+                    log_error!(&format!("加载失败:{}, 备份旧配置并创建新配置", e));
+                    // 备份旧配置文件，避免用户配置丢失
+                    let backup_path = path.with_extension("json.bak");
+                    if let Err(err) = std::fs::rename(path, &backup_path) {
+                        log_warn!(&format!("备份旧配置失败: {}, 尝试直接覆盖", err));
+                    }
 
                     let cfg = Self::new(path);
                     if let Err(e) = cfg.save() {
@@ -187,7 +196,7 @@ impl AppConfig {
         }
     }
 
-    /// 保存配置到存储的路径
+    /// 保存配置到存储的路径（原子写入）
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(path) = &self.config_path {
             // 自动创建父目录
@@ -197,7 +206,10 @@ impl AppConfig {
                 }
             }
             let config_str = serde_json::to_string_pretty(self)?;
-            fs::write(path, config_str)?;
+            // 先写入临时文件，再原子重命名，防止写入过程中崩溃导致配置损坏
+            let tmp_path = path.with_extension("json.tmp");
+            fs::write(&tmp_path, config_str)?;
+            fs::rename(&tmp_path, path)?;
             log_info!("配置文件已保存");
             Ok(())
         } else {

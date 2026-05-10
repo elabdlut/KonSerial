@@ -1,7 +1,7 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes: [
     {
       path: '/',
@@ -44,6 +44,13 @@ const router = createRouter({
       meta: { title: '设置' }
     }
   ]
+})
+
+router.afterEach((to) => {
+  const title = to.meta.title as string | undefined
+  if (title) {
+    document.title = `${title} - KonSerial`
+  }
 })
 
 export default router

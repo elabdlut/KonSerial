@@ -6,7 +6,7 @@ pub mod commands;
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 /// 获取默认数据库路径（与配置文件同目录）
 /// Linux: ~/.config/konserial/data.db
@@ -65,7 +65,7 @@ fn row_to_data_record(row: &rusqlite::Row) -> rusqlite::Result<DataRecord> {
 
 impl DataLogger {
     /// 创建 DataLogger 实例，自动初始化数据库表结构
-    pub fn new<P: AsRef<Path>>(db_path: P) -> Result<Self, String> {
+    pub async fn new<P: AsRef<Path>>(db_path: P) -> Result<Self, String> {
         let path = db_path.as_ref();
 
         // 确保数据库目录存在
@@ -86,14 +86,14 @@ impl DataLogger {
         .map_err(|e| format!("设置 PRAGMA 失败: {}", e))?;
 
         // 创建/迁移表结构
-        Self::migrate_schema(&conn)?;
+        Self::migrate_schema(&conn).await?;
 
         Ok(Self {
             conn: Mutex::new(conn),
         })
     }
 
-    fn migrate_schema(conn: &Connection) -> Result<(), String> {
+    async fn migrate_schema(conn: &Connection) -> Result<(), String> {
         // 尝试创建新 sessions 表（如果不存在）
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS sessions (
@@ -147,13 +147,13 @@ impl DataLogger {
     // ========== 会话管理 ==========
 
     /// 创建新的数据记录会话（打开串口时调用）
-    pub fn create_session(
+    pub async fn create_session(
         &self,
         connection_id: &str,
         port_name: &str,
         baud_rate: u32,
     ) -> Result<i64, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.conn.lock().await;
         conn.execute(
             "INSERT INTO sessions (connection_id, session_type, port_name, baud_rate) VALUES (?1, 'serial', ?2, ?3)",
             params![connection_id, port_name, baud_rate],
@@ -163,7 +163,7 @@ impl DataLogger {
     }
 
     /// 创建网络连接的数据记录会话
-    pub fn create_network_session(
+    pub async fn create_network_session(
         &self,
         connection_id: &str,
         session_type: &str,
@@ -171,7 +171,7 @@ impl DataLogger {
         host: &str,
         port: u16,
     ) -> Result<i64, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.conn.lock().await;
         conn.execute(
             "INSERT INTO sessions (connection_id, session_type, protocol, host, port) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![connection_id, session_type, protocol, host, port],
@@ -181,8 +181,8 @@ impl DataLogger {
     }
 
     /// 结束会话（关闭连接时调用）
-    pub fn end_session(&self, session_id: i64) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn end_session(&self, session_id: i64) -> Result<(), String> {
+        let conn = self.conn.lock().await;
         conn.execute(
             "UPDATE sessions SET ended_at = datetime('now','localtime') WHERE id = ?1",
             params![session_id],
@@ -194,8 +194,8 @@ impl DataLogger {
     // ========== 数据写入 ==========
 
     /// 记录接收数据
-    pub fn log_rx(&self, session_id: i64, data: &[u8]) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn log_rx(&self, session_id: i64, data: &[u8]) -> Result<(), String> {
+        let conn = self.conn.lock().await;
         conn.execute(
             "INSERT INTO serial_data (session_id, direction, data) VALUES (?1, 'RX', ?2)",
             params![session_id, data],
@@ -205,8 +205,8 @@ impl DataLogger {
     }
 
     /// 记录发送数据
-    pub fn log_tx(&self, session_id: i64, data: &[u8]) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn log_tx(&self, session_id: i64, data: &[u8]) -> Result<(), String> {
+        let conn = self.conn.lock().await;
         conn.execute(
             "INSERT INTO serial_data (session_id, direction, data) VALUES (?1, 'TX', ?2)",
             params![session_id, data],
@@ -218,8 +218,8 @@ impl DataLogger {
     // ========== 查询 ==========
 
     /// 获取所有会话列表（按时间倒序）
-    pub fn get_sessions(&self) -> Result<Vec<SessionInfo>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn get_sessions(&self) -> Result<Vec<SessionInfo>, String> {
+        let conn = self.conn.lock().await;
         let mut stmt = conn
             .prepare(
                 "SELECT s.id, s.connection_id, s.session_type, s.port_name, s.baud_rate,
@@ -258,14 +258,14 @@ impl DataLogger {
     }
 
     /// 获取指定会话的数据记录
-    pub fn get_session_data(
+    pub async fn get_session_data(
         &self,
         session_id: i64,
         direction: Option<String>,
         limit: u32,
         offset: u32,
     ) -> Result<Vec<DataRecord>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.conn.lock().await;
 
         let records = if let Some(dir) = direction {
             let mut stmt = conn
@@ -303,26 +303,35 @@ impl DataLogger {
     // ========== 删除与导出 ==========
 
     /// 删除指定会话及其所有数据
-    pub fn delete_session(&self, session_id: i64) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn delete_session(&self, session_id: i64) -> Result<(), String> {
+        let conn = self.conn.lock().await;
         // foreign_keys=ON + ON DELETE CASCADE 会自动清理 serial_data
         conn.execute("DELETE FROM sessions WHERE id = ?1", params![session_id])
             .map_err(|e| format!("删除会话失败: {}", e))?;
         Ok(())
     }
 
-    /// 导出指定会话为 CSV 格式字符串
-    pub fn export_session_csv(&self, session_id: i64) -> Result<String, String> {
-        let records = self.get_session_data(session_id, None, u32::MAX, 0)?;
+    /// 导出指定会话为 CSV 格式字符串（分批读取避免 OOM）
+    pub async fn export_session_csv(&self, session_id: i64) -> Result<String, String> {
         let mut csv = String::from("timestamp,direction,data_hex\n");
-        for record in &records {
-            let hex: String = record
-                .data
-                .iter()
-                .map(|b| format!("{:02X}", b))
-                .collect::<Vec<_>>()
-                .join(" ");
-            csv.push_str(&format!("{},{},{}\n", record.timestamp, record.direction, hex));
+        let mut offset = 0u32;
+        const BATCH_SIZE: u32 = 1000;
+
+        loop {
+            let batch = self.get_session_data(session_id, None, BATCH_SIZE, offset).await?;
+            if batch.is_empty() {
+                break;
+            }
+            for record in &batch {
+                let hex: String = record
+                    .data
+                    .iter()
+                    .map(|b| format!("{:02X}", b))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                csv.push_str(&format!("{},{},{}\n", record.timestamp, record.direction, hex));
+            }
+            offset += BATCH_SIZE;
         }
         Ok(csv)
     }

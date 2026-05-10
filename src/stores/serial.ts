@@ -34,6 +34,9 @@ export interface ConnectionInfo {
   config: SerialPortConfig
   bytes_received: number
   bytes_sent: number
+  rx_rate: number
+  tx_rate: number
+  connected_at: string | null
   last_error: string | null
   created_at: string
 }
@@ -173,8 +176,7 @@ watch(
         delete reconnectAttemptCounts[conn.connection_id]
       }
     }
-  },
-  { deep: true }
+  }
 )
 
 /** 当前选中的连接 ID（用于图表/脚本等默认目标） */
@@ -193,7 +195,8 @@ export interface ReceivedLine {
   time: number
 }
 export const receivedBuffer = ref<ReceivedLine[]>([])
-export const maxBufferSize = ref(10000)
+import { maxBufferSize as settingsMaxBufferSize } from './settings'
+export const maxBufferSize = settingsMaxBufferSize
 
 // ========== 行缓冲状态（解决串口数据分段显示问题） ==========
 
@@ -279,8 +282,9 @@ function scheduleConnectionFlush(connectionId: string) {
 export function addReceivedData(connectionId: string, content: string) {
   receivedBuffer.value.push({ connection_id: connectionId, content, time: Date.now() })
   // 限制缓存大小
-  while (receivedBuffer.value.length > maxBufferSize.value) {
-    receivedBuffer.value.shift()
+  const over = receivedBuffer.value.length - maxBufferSize.value
+  if (over > 0) {
+    receivedBuffer.value.splice(0, over)
   }
 }
 
@@ -431,7 +435,7 @@ export function setConnectionDisplay(connectionId: string, settings: Partial<Dis
 
 /** 生成唯一的连接 ID */
 export function generateConnectionId(): string {
-  return `conn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  return `conn_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
 }
 
 /** 从 AppConfig 创建 SerialPortConfig */
@@ -511,7 +515,7 @@ export async function closeSerialPort(connectionId: string): Promise<void> {
     }
     delete connectionPendingTexts[connectionId]
     delete connectionByteDecoders[connectionId]
-    delete scriptLineCallbacks[connectionId]
+    scriptLineCallbacks[connectionId] = []
 
     // 如果是当前连接，切换到其他连接
     if (currentConnectionId.value === connectionId) {
@@ -569,8 +573,12 @@ export async function sendData(
     let bytes: number[]
 
     if (isHex) {
-      // 十六进制模式
-      bytes = data.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || []
+      // 十六进制模式：移除所有空白字符后按每2字符解析
+      const cleaned = data.replace(/\s/g, '')
+      if (cleaned.length % 2 !== 0) {
+        throw new Error('Hex 数据长度必须为偶数')
+      }
+      bytes = cleaned.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || []
     } else {
       // 文本模式
       bytes = Array.from(new TextEncoder().encode(data))
@@ -622,7 +630,11 @@ export async function sendDataWithCrc(
   try {
     let bytes: number[]
     if (isHex) {
-      bytes = data.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || []
+      const cleaned = data.replace(/\s/g, '')
+      if (cleaned.length % 2 !== 0) {
+        throw new Error('Hex 数据长度必须为偶数')
+      }
+      bytes = cleaned.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || []
     } else {
       bytes = Array.from(new TextEncoder().encode(data))
     }

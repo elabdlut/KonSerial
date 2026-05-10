@@ -49,6 +49,11 @@ const loadingSessions = ref(false)
 const loadingRecords = ref(false)
 const hexDisplay = ref(true)
 
+// 分页
+const page = ref(1)
+const pageSize = ref(100)
+const totalRecords = ref(0)
+
 const selectedSession = computed(() =>
   sessions.value.find(s => s.id === selectedSessionId.value) || null
 )
@@ -68,15 +73,20 @@ const loadSessions = async () => {
   }
 }
 
-const loadRecords = async (sessionId: number) => {
+const loadRecords = async (sessionId: number, pageNum = 1) => {
   loadingRecords.value = true
   try {
+    const offset = (pageNum - 1) * pageSize.value
     records.value = await invoke<DataRecord[]>('get_session_data', {
       sessionId,
       direction: null as string | null,
-      limit: 10000,
-      offset: 0,
+      limit: pageSize.value,
+      offset,
     })
+    // 简化：用返回条数估计总数（后端 limit 默认 1000，实际应返回 count）
+    totalRecords.value = records.value.length < pageSize.value
+      ? offset + records.value.length
+      : offset + pageSize.value + 1 // 暗示还有更多
   } catch (e) {
     message.error(t('history.recordsFail', String(e)))
   } finally {
@@ -84,9 +94,24 @@ const loadRecords = async (sessionId: number) => {
   }
 }
 
+const prevPage = () => {
+  if (page.value > 1) {
+    page.value--
+    if (selectedSessionId.value) loadRecords(selectedSessionId.value, page.value)
+  }
+}
+
+const nextPage = () => {
+  if (records.value.length === pageSize.value) {
+    page.value++
+    if (selectedSessionId.value) loadRecords(selectedSessionId.value, page.value)
+  }
+}
+
 const selectSession = (id: number) => {
   selectedSessionId.value = id
-  loadRecords(id)
+  page.value = 1
+  loadRecords(id, 1)
 }
 
 const deleteSession = async (id: number, e: Event) => {
@@ -102,24 +127,26 @@ const deleteSession = async (id: number, e: Event) => {
 
 const exportSession = async (id: number, e: Event) => {
   e.stopPropagation()
+  let url: string | null = null
   try {
     const csv = await invoke<string>('export_session_csv', { sessionId: id })
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
+    url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = `session_${id}.csv`
     a.click()
-    URL.revokeObjectURL(url)
     message.success(t('history.exported'))
   } catch (err) {
     message.error(t('history.exportFail', String(err)))
+  } finally {
+    if (url) URL.revokeObjectURL(url)
   }
 }
 
 const formatData = (data: number[]) => {
   if (hexDisplay.value) {
-    return data.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ')
+    return data.map(b => (b & 0xFF).toString(16).toUpperCase().padStart(2, '0')).join(' ')
   }
   const decoder = new TextDecoder('utf-8', { fatal: false })
   return decoder.decode(new Uint8Array(data))
@@ -258,6 +285,12 @@ onMounted(() => {
             <NEmpty :description="t('history.noRecords')" />
           </div>
         </NScrollbar>
+        <!-- 分页工具栏 -->
+        <div class="pagination-bar">
+          <NButton size="tiny" :disabled="page <= 1" @click="prevPage">上一页</NButton>
+          <span class="page-info">第 {{ page }} 页</span>
+          <NButton size="tiny" :disabled="records.length < pageSize" @click="nextPage">下一页</NButton>
+        </div>
       </div>
     </main>
   </div>
@@ -458,5 +491,21 @@ onMounted(() => {
   word-break: break-all;
   white-space: pre-wrap;
   color: var(--text-primary);
+}
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-page);
+}
+.page-info {
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+  min-width: 60px;
+  text-align: center;
 }
 </style>

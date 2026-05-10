@@ -23,7 +23,7 @@ pub fn list_serial_ports() -> Result<Vec<String>, String> {
         })
 }
 
-/// 获取串口详细信息
+/// 获取串口详细信息（返回稳定格式）
 #[tauri::command]
 pub fn get_serial_ports_info() -> Result<Vec<SerialPortInfoSimple>, String> {
     PortManager::list_ports()
@@ -31,7 +31,12 @@ pub fn get_serial_ports_info() -> Result<Vec<SerialPortInfoSimple>, String> {
             ports.into_iter()
                 .map(|p| SerialPortInfoSimple {
                     port_name: p.port_name,
-                    port_type: format!("{:?}", p.port_type),
+                    port_type: match p.port_type {
+                        serialport::SerialPortType::UsbPort(_) => "USB".to_string(),
+                        serialport::SerialPortType::PciPort => "PCI".to_string(),
+                        serialport::SerialPortType::BluetoothPort => "Bluetooth".to_string(),
+                        serialport::SerialPortType::Unknown => "Unknown".to_string(),
+                    },
                 })
                 .collect()
         })
@@ -143,7 +148,9 @@ pub async fn send_serial_file(
     delay_ms: Option<u64>,
 ) -> Result<usize, String> {
     let mgr = manager.lock().await;
-    mgr.send_file(&connection_id, data, chunk_size.unwrap_or(256), delay_ms.unwrap_or(5)).await
+    let chunk_size = chunk_size.unwrap_or(256);
+    let delay_ms = delay_ms.unwrap_or(5);
+    mgr.send_file(&connection_id, data, chunk_size, delay_ms).await
 }
 
 /// 检查指定串口是否已连接
@@ -154,4 +161,26 @@ pub async fn is_serial_connected(
 ) -> Result<bool, String> {
     let mgr = manager.lock().await;
     Ok(mgr.is_connected(&connection_id).await)
+}
+
+/// 设置串口 DTR 信号
+#[tauri::command]
+pub async fn set_serial_dtr(
+    manager: State<'_, Arc<Mutex<PortManager>>>,
+    connection_id: String,
+    level: bool,
+) -> Result<(), String> {
+    let mgr = manager.lock().await;
+    mgr.set_dtr(&connection_id, level).await
+}
+
+/// 设置串口 RTS 信号
+#[tauri::command]
+pub async fn set_serial_rts(
+    manager: State<'_, Arc<Mutex<PortManager>>>,
+    connection_id: String,
+    level: bool,
+) -> Result<(), String> {
+    let mgr = manager.lock().await;
+    mgr.set_rts(&connection_id, level).await
 }

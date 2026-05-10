@@ -4,6 +4,16 @@ import { zhCN, dateZhCN, enUS, dateEnUS } from 'naive-ui'
 import type { GlobalThemeOverrides } from 'naive-ui'
 import { appConfig, saveConfig } from './config'
 
+// 自动保存配置（防抖 500ms）
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+watch(appConfig, () => {
+  if (!appConfig.value) return
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    saveConfig().catch((e) => console.error('自动保存配置失败:', e))
+  }, 500)
+}, { deep: true })
+
 // ========== 主题 ==========
 
 /** 系统是否偏好暗色 */
@@ -98,23 +108,19 @@ export const naiveDateLocale = computed(() =>
 
 // ========== 副作用：主题应用到 DOM ==========
 
-/** 将主题类名应用到 document.documentElement */
-export function applyThemeToDOM() {
-  watch(isDark, (dark) => {
-    if (dark) {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
-  }, { immediate: true })
-}
+// 将主题类名应用到 document.documentElement
+watch(isDark, (dark) => {
+  if (dark) {
+    document.documentElement.classList.add('dark')
+  } else {
+    document.documentElement.classList.remove('dark')
+  }
+}, { immediate: true })
 
-/** 将字体大小应用到 CSS 变量 */
-export function applyFontSizeToDOM() {
-  watch(fontSize, (size) => {
-    document.documentElement.style.setProperty('--app-font-size', `${size}px`)
-  }, { immediate: true })
-}
+// 将字体大小应用到 CSS 变量
+watch(fontSize, (size) => {
+  document.documentElement.style.setProperty('--app-font-size', `${size}px`)
+}, { immediate: true })
 
 // ========== 网络设置 ==========
 
